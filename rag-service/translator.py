@@ -1,7 +1,7 @@
 """
 Translation Pipeline for RAG Pipeline
-LLM-based translation (EN→ES) and spec normalization for product data.
-Includes airsoft terminology glossary and user-editable custom glossary.
+LLM-based translation with multi-language airsoft terminology glossary.
+Supports 20 languages with English as hub language.
 """
 
 import asyncio
@@ -13,245 +13,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Callable
 
+from glossary_data import GLOSSARY, SUPPORTED_LANGUAGES, get_glossary_for_pair
+
 logger = logging.getLogger(__name__)
-
-
-# ── Airsoft Domain Glossary ───────────────────────────────────────
-# Bidirectional EN↔ES terminology for airsoft/tactical equipment.
-# Keys are lowercase English terms, values are Spanish translations.
-# This glossary is ALWAYS injected into translation prompts.
-
-AIRSOFT_GLOSSARY_EN_ES = {
-    # ── Weapon parts ──
-    "inner barrel": "cañón interior",
-    "outer barrel": "cañón exterior",
-    "barrel": "cañón",
-    "barrel extension": "extensión de cañón",
-    "barrel length": "longitud de cañón",
-    "hop-up": "hop-up",
-    "hop-up chamber": "cámara de hop-up",
-    "hop-up bucking": "goma de hop-up",
-    "hop-up nub": "nub de hop-up",
-    "gearbox": "gearbox",
-    "gearbox shell": "carcasa de gearbox",
-    "cylinder": "cilindro",
-    "cylinder head": "cabeza de cilindro",
-    "piston": "pistón",
-    "piston head": "cabeza de pistón",
-    "spring": "muelle",
-    "spring guide": "guía de muelle",
-    "nozzle": "nozzle",
-    "air nozzle": "nozzle de aire",
-    "tappet plate": "tappet plate",
-    "trigger": "gatillo",
-    "trigger unit": "unidad de gatillo",
-    "trigger guard": "guardamonte",
-    "selector plate": "selector de tiro",
-    "fire selector": "selector de tiro",
-    "safety": "seguro",
-    "safety lever": "palanca de seguro",
-    "stock": "culata",
-    "folding stock": "culata plegable",
-    "retractable stock": "culata retráctil",
-    "adjustable stock": "culata ajustable",
-    "buffer tube": "tubo de culata",
-    "handguard": "guardamanos",
-    "rail": "riel",
-    "rail system": "sistema de rieles",
-    "picatinny rail": "riel Picatinny",
-    "M-LOK": "M-LOK",
-    "KeyMod": "KeyMod",
-    "upper receiver": "cuerpo superior",
-    "lower receiver": "cuerpo inferior",
-    "receiver": "cuerpo",
-    "dust cover": "tapa de ventana de expulsión",
-    "bolt catch": "retenedor del cerrojo",
-    "bolt": "cerrojo",
-    "charging handle": "manija de carga",
-    "forward assist": "asistente de avance",
-    "flash hider": "apagallamas",
-    "muzzle brake": "freno de boca",
-    "suppressor": "silenciador",
-    "silencer": "silenciador",
-    "tracer unit": "unidad trazadora",
-    "grip": "empuñadura",
-    "pistol grip": "empuñadura de pistola",
-    "foregrip": "empuñadura delantera",
-    "vertical grip": "empuñadura vertical",
-    "angled grip": "empuñadura angular",
-    "bipod": "bípode",
-    "sling": "correa portafusil",
-    "sling mount": "anclaje de correa",
-    "sling swivel": "eslabón de correa",
-    "magazine": "cargador",
-    "mag": "cargador",
-    "mid-cap magazine": "cargador mid-cap",
-    "hi-cap magazine": "cargador hi-cap",
-    "low-cap magazine": "cargador low-cap",
-    "drum magazine": "cargador de tambor",
-    "magazine well": "alojamiento de cargador",
-    "mag release": "liberador de cargador",
-    "magazine catch": "retenedor de cargador",
-    "speed loader": "cargador rápido",
-    "BB loader": "cargador de BBs",
-    # ── Weapon types ──
-    "airsoft gun": "réplica de airsoft",
-    "airsoft rifle": "réplica de airsoft tipo rifle",
-    "airsoft pistol": "pistola de airsoft",
-    "replica": "réplica",
-    "AEG": "AEG (fusil eléctrico automático)",
-    "GBB": "GBB (gas blowback)",
-    "gas blowback": "gas blowback",
-    "NBB": "NBB (gas sin blowback)",
-    "spring powered": "accionada por muelle",
-    "bolt action": "cerrojo",
-    "bolt-action rifle": "rifle de cerrojo",
-    "sniper rifle": "rifle de francotirador",
-    "DMR": "DMR (tirador designado)",
-    "submachine gun": "subfusil",
-    "shotgun": "escopeta",
-    "grenade launcher": "lanzagranadas",
-    "sidearm": "arma secundaria",
-    "carbine": "carabina",
-    "PDW": "PDW (arma de defensa personal)",
-    "LMG": "ametralladora ligera",
-    "support weapon": "arma de apoyo",
-    # ── Propulsion / power ──
-    "blowback": "blowback",
-    "recoil": "retroceso",
-    "green gas": "green gas",
-    "CO2": "CO2",
-    "propane": "propano",
-    "HPA": "HPA (aire de alta presión)",
-    "high pressure air": "aire de alta presión",
-    "LiPo battery": "batería LiPo",
-    "NiMH battery": "batería NiMH",
-    "battery": "batería",
-    "charger": "cargador de batería",
-    "smart charger": "cargador inteligente",
-    "MOSFET": "MOSFET",
-    "ETU": "ETU (unidad de gatillo electrónico)",
-    "rate of fire": "cadencia de tiro",
-    "ROF": "cadencia de tiro",
-    "FPS": "FPS",
-    "feet per second": "pies por segundo",
-    "muzzle velocity": "velocidad de boca",
-    "joule": "julio",
-    "joules": "julios",
-    # ── Ammunition ──
-    "BB": "BB",
-    "BBs": "BBs",
-    "pellet": "balín",
-    "biodegradable BBs": "BBs biodegradables",
-    "tracer BBs": "BBs trazadoras",
-    "BB weight": "peso de BB",
-    # ── Optics & accessories ──
-    "red dot sight": "visor de punto rojo",
-    "red dot": "punto rojo",
-    "holographic sight": "visor holográfico",
-    "scope": "mira telescópica",
-    "magnifier": "magnificador",
-    "iron sights": "miras metálicas",
-    "front sight": "punto de mira",
-    "rear sight": "alza",
-    "flip-up sights": "miras abatibles",
-    "laser": "láser",
-    "flashlight": "linterna táctica",
-    "weaponlight": "linterna de arma",
-    "PEQ box": "caja PEQ",
-    "pressure switch": "interruptor de presión",
-    "mount": "montaje",
-    "optic mount": "montaje de óptica",
-    "scope mount": "montaje de mira",
-    "riser mount": "elevador de montaje",
-    # ── Tactical gear ──
-    "plate carrier": "portaplacas",
-    "chest rig": "chest rig",
-    "tactical vest": "chaleco táctico",
-    "MOLLE": "MOLLE",
-    "pouch": "portacargador",
-    "magazine pouch": "portacargador",
-    "dump pouch": "bolsa de descarga",
-    "holster": "funda",
-    "pistol holster": "funda de pistola",
-    "belt": "cinturón táctico",
-    "battle belt": "cinturón de combate",
-    "knee pads": "rodilleras",
-    "elbow pads": "coderas",
-    "gloves": "guantes tácticos",
-    "tactical gloves": "guantes tácticos",
-    "camouflage": "camuflaje",
-    "BDU": "uniforme de combate",
-    "combat shirt": "camisa de combate",
-    "combat pants": "pantalón de combate",
-    "boots": "botas tácticas",
-    "ghillie suit": "traje ghillie",
-    "hydration carrier": "portacamelback",
-    "backpack": "mochila táctica",
-    # ── Protection ──
-    "goggles": "gafas de protección",
-    "safety glasses": "gafas de seguridad",
-    "full face mask": "máscara facial completa",
-    "mesh mask": "máscara de malla",
-    "lower face mask": "máscara facial inferior",
-    "helmet": "casco",
-    "helmet cover": "funda de casco",
-    "face protection": "protección facial",
-    "eye protection": "protección ocular",
-    # ── Gameplay ──
-    "CQB": "CQB (combate en espacios cerrados)",
-    "close quarters battle": "combate en espacios cerrados",
-    "milsim": "milsim (simulación militar)",
-    "speedsoft": "speedsoft",
-    "skirmish": "partida",
-    "game": "partida",
-    "field": "campo de juego",
-    "chrono": "cronógrafo",
-    "chronograph": "cronógrafo",
-    "FPS limit": "límite de FPS",
-    "engagement distance": "distancia de enfrentamiento",
-    "minimum engagement distance": "distancia mínima de enfrentamiento",
-    "MED": "distancia mínima de enfrentamiento",
-    "semi-auto": "semiautomático",
-    "full-auto": "automático",
-    "burst": "ráfaga",
-    "single shot": "tiro a tiro",
-    # ── Materials ──
-    "full metal": "full metal",
-    "metal body": "cuerpo de metal",
-    "polymer": "polímero",
-    "nylon fiber": "fibra de nylon",
-    "ABS plastic": "plástico ABS",
-    "CNC machined": "mecanizado CNC",
-    "aluminum alloy": "aleación de aluminio",
-    "zinc alloy": "aleación de zinc",
-    "steel": "acero",
-    "stainless steel": "acero inoxidable",
-    "real wood": "madera real",
-    "wood furniture": "guardamanos de madera",
-    "rubber grip": "empuñadura de goma",
-    # ── Upgrades & internals ──
-    "upgrade": "mejora",
-    "upgrade part": "pieza de mejora",
-    "tight bore barrel": "cañón de precisión",
-    "precision barrel": "cañón de precisión",
-    "6.01mm barrel": "cañón de 6.01mm",
-    "6.03mm barrel": "cañón de 6.03mm",
-    "torque motor": "motor de torque",
-    "high speed motor": "motor de alta velocidad",
-    "motor": "motor",
-    "gear set": "set de engranajes",
-    "gear ratio": "relación de engranajes",
-    "shimming": "shimming",
-    "air seal": "sellado de aire",
-    "compression": "compresión",
-    "wiring": "cableado",
-    "Deans connector": "conector Deans",
-    "Tamiya connector": "conector Tamiya",
-}
-
-# Build reverse glossary (ES→EN) automatically
-AIRSOFT_GLOSSARY_ES_EN = {v.lower(): k for k, v in AIRSOFT_GLOSSARY_EN_ES.items()}
 
 
 @dataclass
@@ -357,117 +121,207 @@ BRAND_NORMALIZATIONS = {
     "retro arms": "Retro Arms",
 }
 
-LANG_NAMES = {
-    "en": "English",
-    "es": "Spanish",
-    "ca": "Catalan",
-    "fr": "French",
-    "de": "German",
-    "it": "Italian",
-    "pt": "Portuguese",
-    "eu": "Basque",
-    "gl": "Galician",
-}
+# Re-export for backward compat; canonical source is glossary_data.py
+LANG_NAMES = SUPPORTED_LANGUAGES
 
 
 class GlossaryStore:
-    """Redis-backed store for user-defined glossary terms."""
+    """Redis-backed store for user-defined glossary terms.
 
-    KEY = "translation:glossary"
+    Custom entries are stored per language pair:
+      Redis key: translation:glossary:{source}:{target}
+    Legacy entries (from old single-key store) are auto-migrated on first load.
+    """
+
+    KEY_PREFIX = "translation:glossary"
+    LEGACY_KEY = "translation:glossary"  # old single-hash key (en:es assumed)
 
     def __init__(self, redis=None):
         self.redis = redis
-        self._cache: Dict[str, str] = {}  # in-memory cache
+        # Per-pair cache: {(source, target): {term: translation}}
+        self._cache: Dict[tuple, Dict[str, str]] = {}
 
-    async def load(self) -> Dict[str, str]:
-        """Load all custom glossary entries from Redis."""
+    def _redis_key(self, source_lang: str, target_lang: str) -> str:
+        return f"{self.KEY_PREFIX}:{source_lang}:{target_lang}"
+
+    async def _migrate_legacy(self):
+        """Migrate old single-key glossary to per-pair format (en:es)."""
         if not self.redis:
-            return self._cache
+            return
         try:
-            raw = await self.redis.hgetall(self.KEY)
-            self._cache = {
+            raw = await self.redis.hgetall(self.LEGACY_KEY)
+            if not raw:
+                return
+            # Check if it's the old format (no colon-separated lang pairs in key name)
+            new_key = self._redis_key("en", "es")
+            exists = await self.redis.exists(new_key)
+            if not exists and raw:
+                decoded = {
+                    (k.decode() if isinstance(k, bytes) else k):
+                    (v.decode() if isinstance(v, bytes) else v)
+                    for k, v in raw.items()
+                }
+                if decoded:
+                    await self.redis.hset(new_key, mapping=decoded)
+                    logger.info(f"Migrated {len(decoded)} legacy glossary entries to {new_key}")
+        except Exception as e:
+            logger.warning(f"Legacy glossary migration failed: {e}")
+
+    async def load(self, source_lang: str = "en", target_lang: str = "es") -> Dict[str, str]:
+        """Load custom glossary entries for a language pair from Redis."""
+        pair = (source_lang, target_lang)
+        if not self.redis:
+            return self._cache.get(pair, {})
+        try:
+            key = self._redis_key(source_lang, target_lang)
+            raw = await self.redis.hgetall(key)
+            entries = {
                 (k.decode() if isinstance(k, bytes) else k):
                 (v.decode() if isinstance(v, bytes) else v)
                 for k, v in raw.items()
             }
+            self._cache[pair] = entries
         except Exception as e:
-            logger.warning(f"Failed to load glossary from Redis: {e}")
-        return self._cache
+            logger.warning(f"Failed to load glossary ({source_lang}→{target_lang}) from Redis: {e}")
+        return self._cache.get(pair, {})
 
-    async def add(self, source_term: str, target_term: str) -> None:
-        """Add or update a glossary entry."""
+    async def load_all_pairs(self) -> int:
+        """Load all custom glossary pairs from Redis. Returns total custom entry count."""
+        if not self.redis:
+            return 0
+        await self._migrate_legacy()
+        total = 0
+        try:
+            pattern = f"{self.KEY_PREFIX}:*:*"
+            keys = []
+            async for key in self.redis.scan_iter(match=pattern):
+                k = key.decode() if isinstance(key, bytes) else key
+                # Parse "translation:glossary:en:es" → ("en", "es")
+                parts = k.split(":")
+                if len(parts) == 4:
+                    keys.append((parts[2], parts[3]))
+            for src, tgt in keys:
+                entries = await self.load(src, tgt)
+                total += len(entries)
+        except Exception as e:
+            logger.warning(f"Failed to scan glossary keys: {e}")
+        return total
+
+    async def add(self, source_term: str, target_term: str,
+                  source_lang: str = "en", target_lang: str = "es") -> None:
+        """Add or update a custom glossary entry for a language pair."""
+        pair = (source_lang, target_lang)
         key = source_term.strip().lower()
         val = target_term.strip()
-        self._cache[key] = val
+        if pair not in self._cache:
+            self._cache[pair] = {}
+        self._cache[pair][key] = val
         if self.redis:
             try:
-                await self.redis.hset(self.KEY, key, val)
+                await self.redis.hset(self._redis_key(source_lang, target_lang), key, val)
             except Exception as e:
                 logger.warning(f"Failed to save glossary entry to Redis: {e}")
 
-    async def add_bulk(self, entries: Dict[str, str]) -> int:
-        """Add multiple glossary entries at once. Returns count added."""
+    async def add_bulk(self, entries: Dict[str, str],
+                       source_lang: str = "en", target_lang: str = "es") -> int:
+        """Add multiple glossary entries for a language pair. Returns count added."""
+        pair = (source_lang, target_lang)
         clean = {k.strip().lower(): v.strip() for k, v in entries.items() if k.strip() and v.strip()}
-        self._cache.update(clean)
+        if pair not in self._cache:
+            self._cache[pair] = {}
+        self._cache[pair].update(clean)
         if self.redis and clean:
             try:
-                await self.redis.hset(self.KEY, mapping=clean)
+                await self.redis.hset(self._redis_key(source_lang, target_lang), mapping=clean)
             except Exception as e:
                 logger.warning(f"Failed to bulk save glossary to Redis: {e}")
         return len(clean)
 
-    async def remove(self, source_term: str) -> bool:
-        """Remove a glossary entry. Returns True if existed."""
+    async def remove(self, source_term: str,
+                     source_lang: str = "en", target_lang: str = "es") -> bool:
+        """Remove a custom glossary entry. Returns True if existed."""
+        pair = (source_lang, target_lang)
         key = source_term.strip().lower()
-        existed = key in self._cache
-        self._cache.pop(key, None)
+        existed = key in self._cache.get(pair, {})
+        if pair in self._cache:
+            self._cache[pair].pop(key, None)
         if self.redis:
             try:
-                await self.redis.hdel(self.KEY, key)
+                await self.redis.hdel(self._redis_key(source_lang, target_lang), key)
             except Exception as e:
                 logger.warning(f"Failed to remove glossary entry from Redis: {e}")
         return existed
 
-    async def get_all(self) -> Dict[str, str]:
-        """Get all entries (cached)."""
-        if not self._cache and self.redis:
-            await self.load()
-        return dict(self._cache)
+    async def get_all(self, source_lang: str = "en", target_lang: str = "es") -> Dict[str, str]:
+        """Get all custom entries for a language pair (cached)."""
+        pair = (source_lang, target_lang)
+        if pair not in self._cache and self.redis:
+            await self.load(source_lang, target_lang)
+        return dict(self._cache.get(pair, {}))
 
     def get_relevant(self, text: str, source_lang: str, target_lang: str) -> Dict[str, str]:
         """Find glossary entries relevant to the input text.
 
-        Checks both built-in and custom glossary, returns only terms
-        that appear in the text.
+        Checks both built-in (from glossary_data) and custom glossary,
+        returns only terms that appear in the text.
+        Works for ANY supported language pair.
         """
         text_lower = text.lower()
         relevant = {}
 
-        # Pick the right built-in glossary direction
-        if source_lang == "en" and target_lang == "es":
-            builtin = AIRSOFT_GLOSSARY_EN_ES
-        elif source_lang == "es" and target_lang == "en":
-            builtin = AIRSOFT_GLOSSARY_ES_EN
-        else:
-            builtin = {}
+        # Get built-in terms for this language pair (works for all 20 languages)
+        builtin = get_glossary_for_pair(source_lang, target_lang)
 
         # Check built-in terms (longest first to avoid partial matches)
         for term in sorted(builtin.keys(), key=len, reverse=True):
             if term in text_lower:
                 relevant[term] = builtin[term]
 
-        # Check custom terms (override built-in if same key)
-        for term, translation in self._cache.items():
+        # Check custom terms for this pair (override built-in if same key)
+        pair = (source_lang, target_lang)
+        for term, translation in self._cache.get(pair, {}).items():
             if term in text_lower:
                 relevant[term] = translation
 
         return relevant
 
 
+def estimate_tokens(text: str) -> int:
+    """Estimate token count. Conservative 1.4x multiplier for subword tokenization."""
+    return max(1, int(len(text.split()) * 1.4))
+
+
+def pack_batches(texts: List[str], max_input_tokens: int = 12000, min_batch: int = 3) -> List[List[int]]:
+    """Greedy first-fit bin packing by estimated token count.
+
+    Returns list of batches, each batch is a list of text indices.
+    Each batch targets max_input_tokens. A single text exceeding the
+    budget gets its own batch (never split a text across calls).
+    """
+    batches = []
+    current_batch = []
+    current_tokens = 0
+
+    for i, text in enumerate(texts):
+        tokens = estimate_tokens(text)
+        if current_batch and current_tokens + tokens > max_input_tokens:
+            batches.append(current_batch)
+            current_batch = []
+            current_tokens = 0
+        current_batch.append(i)
+        current_tokens += tokens
+
+    if current_batch:
+        batches.append(current_batch)
+    return batches
+
+
 class TranslationPipeline:
     def __init__(self, llm_client, glossary_store: Optional[GlossaryStore] = None):
         self.llm_client = llm_client
         self.glossary = glossary_store or GlossaryStore()
+
+    MAX_CONCURRENT_CHUNKS = 32
 
     async def translate_batch(
         self,
@@ -477,7 +331,10 @@ class TranslationPipeline:
         progress_callback: Optional[Callable] = None,
         rag_context: Optional[str] = None,
     ) -> TranslationJob:
-        """Translate a list of texts using the running LLM."""
+        """Translate a list of texts using the running LLM.
+
+        Sends up to 8 chunks to the LLM concurrently for throughput.
+        """
         job = TranslationJob(
             job_id=uuid.uuid4().hex[:12],
             source_lang=source_lang,
@@ -487,19 +344,33 @@ class TranslationPipeline:
         )
 
         try:
-            # Process in chunks of 5 texts per LLM call
             chunk_size = 5
-            for i in range(0, len(texts), chunk_size):
-                chunk = texts[i:i + chunk_size]
-                translated = await self._translate_chunk(
-                    chunk, source_lang, target_lang, rag_context=rag_context
-                )
-                job.results.extend(translated)
-                job.items_processed = min(i + chunk_size, len(texts))
-                job.log(f"Translated {job.items_processed}/{job.items_total}")
+            chunks = [texts[i:i + chunk_size] for i in range(0, len(texts), chunk_size)]
+            semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_CHUNKS)
 
+            async def _translate_one(chunk_idx: int, chunk: List[str]) -> tuple:
+                async with semaphore:
+                    result = await self._translate_chunk(
+                        chunk, source_lang, target_lang, rag_context=rag_context
+                    )
+                    return chunk_idx, result
+
+            tasks = [_translate_one(idx, chunk) for idx, chunk in enumerate(chunks)]
+            results_ordered = [None] * len(chunks)
+
+            for coro in asyncio.as_completed(tasks):
+                idx, translated = await coro
+                results_ordered[idx] = translated
+                job.items_processed = sum(
+                    len(r) for r in results_ordered if r is not None
+                )
+                job.log(f"Translated {job.items_processed}/{job.items_total}")
                 if progress_callback:
                     progress_callback(job)
+
+            # Flatten in order
+            for result in results_ordered:
+                job.results.extend(result or [])
 
             job.status = "completed"
             job.log(f"COMPLETED: {len(job.results)} items translated")
@@ -579,6 +450,7 @@ class TranslationPipeline:
                     max_tokens=4096,
                     temperature=0.2,
                     timeout=300,
+                    user="rag:translate",
                 ),
             )
 
