@@ -346,9 +346,10 @@ class TranslationPipeline:
         progress_callback: Optional[Callable] = None,
         rag_context: Optional[str] = None,
     ) -> TranslationJob:
-        """Translate a list of texts using the running LLM.
+        """Translate a list of texts using token-aware adaptive batching.
 
-        Sends up to 8 chunks to the LLM concurrently for throughput.
+        Packs texts into batches targeting MAX_INPUT_TOKENS per LLM call,
+        then runs up to MAX_CONCURRENT_CHUNKS batches concurrently.
         """
         job = TranslationJob(
             job_id=uuid.uuid4().hex[:12],
@@ -359,36 +360,46 @@ class TranslationPipeline:
         )
 
         try:
-            chunk_size = 5
-            chunks = [texts[i:i + chunk_size] for i in range(0, len(texts), chunk_size)]
+            # Pre-compute glossary once for all texts
+            combined_text = " ".join(texts)
+            glossary_section = self._build_glossary_prompt_from_text(
+                combined_text, source_lang, target_lang
+            )
+
+            # Token-aware bin packing
+            batches = pack_batches(texts, max_input_tokens=self.MAX_INPUT_TOKENS)
+            job.log(f"Packed {len(texts)} texts into {len(batches)} batches "
+                    f"(avg {len(texts) // max(len(batches), 1)} texts/batch)")
+
             semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_CHUNKS)
 
-            async def _translate_one(chunk_idx: int, chunk: List[str]) -> tuple:
+            async def _translate_one(batch_idx: int, indices: List[int]) -> tuple:
                 async with semaphore:
+                    batch_texts = [texts[i] for i in indices]
                     result = await self._translate_chunk(
-                        chunk, source_lang, target_lang, rag_context=rag_context
+                        batch_texts, source_lang, target_lang,
+                        rag_context=rag_context,
+                        glossary_section=glossary_section,
                     )
-                    return chunk_idx, result
+                    return batch_idx, indices, result
 
-            tasks = [_translate_one(idx, chunk) for idx, chunk in enumerate(chunks)]
-            results_ordered = [None] * len(chunks)
+            tasks = [_translate_one(idx, batch) for idx, batch in enumerate(batches)]
+            results_by_index = {}
 
             for coro in asyncio.as_completed(tasks):
-                idx, translated = await coro
-                results_ordered[idx] = translated
-                job.items_processed = sum(
-                    len(r) for r in results_ordered if r is not None
-                )
-                job.log(f"Translated {job.items_processed}/{job.items_total}")
+                batch_idx, indices, translated = await coro
+                for i, text_idx in enumerate(indices):
+                    results_by_index[text_idx] = translated[i] if i < len(translated) else texts[text_idx]
+                job.items_processed = len(results_by_index)
+                job.log(f"Translated {job.items_processed}/{job.items_total} "
+                        f"(batch {batch_idx + 1}/{len(batches)}, {len(indices)} texts)")
                 if progress_callback:
                     progress_callback(job)
 
-            # Flatten in order
-            for result in results_ordered:
-                job.results.extend(result or [])
-
+            # Reassemble in original order
+            job.results = [results_by_index.get(i, texts[i]) for i in range(len(texts))]
             job.status = "completed"
-            job.log(f"COMPLETED: {len(job.results)} items translated")
+            job.log(f"COMPLETED: {len(job.results)} items translated in {len(batches)} batches")
 
         except Exception as e:
             job.status = "failed"
@@ -409,6 +420,19 @@ class TranslationPipeline:
             return ""
 
         lines = [f"  - \"{term}\" → \"{translation}\"" for term, translation in relevant.items()]
+        return (
+            "\n\n## MANDATORY Terminology Glossary\n"
+            "You MUST use these exact translations for the following terms. "
+            "Do NOT deviate from this glossary:\n"
+            + "\n".join(lines)
+        )
+
+    def _build_glossary_prompt_from_text(self, combined_text: str, source_lang: str, target_lang: str) -> str:
+        """Build glossary section from pre-combined text. Used for pre-computation."""
+        relevant = self.glossary.get_relevant(combined_text, source_lang, target_lang)
+        if not relevant:
+            return ""
+        lines = [f'  - "{term}" \u2192 "{translation}"' for term, translation in relevant.items()]
         return (
             "\n\n## MANDATORY Terminology Glossary\n"
             "You MUST use these exact translations for the following terms. "
