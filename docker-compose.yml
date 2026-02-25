@@ -65,11 +65,59 @@ services:
       timeout: 10s
       retries: 3
 
+  # PostgreSQL for agent state, tasks, schedules
+  postgres:
+    image: postgres:16-alpine
+    container_name: pocharlies-postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: langgraph
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent-secret}
+    networks:
+      - skirmshop-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d langgraph"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # LangGraph Agent Orchestrator
+  agent-service:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    container_name: pocharlies-agent
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8100:8100"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://agent:${POSTGRES_PASSWORD:-agent-secret}@pocharlies-postgres:5432/langgraph
+      - REDIS_URL=redis://pocharlies-redis:6379/1
+      - RAG_SERVICE_URL=http://pocharlies-rag:5000
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-none}
+      - LLM_MODEL=${LLM_MODEL:-}
+    networks:
+      - skirmshop-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rag-service:
+        condition: service_healthy
+
 volumes:
   qdrant_data:
     external: true
     name: skirmshopshopifyapp_qdrant_data
   redis_data:
+  postgres_data:
 
 networks:
   skirmshop-network:
