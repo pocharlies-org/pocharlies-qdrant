@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocharlies Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1 class="logo">Pocharlies Agent</h1>
+            <button id="new-thread-btn" class="btn-new-thread">+ New Thread</button>
+        </div>
+        <nav id="thread-list" class="thread-list"></nav>
+        <div class="mcp-section">
+            <h2 class="mcp-title">MCP Servers</h2>
+            <div id="mcp-status" class="mcp-status">
+                <span class="mcp-placeholder">No servers connected</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="chat-area">
+        <div id="messages" class="messages"></div>
+        <div class="input-area">
+            <textarea
+                id="message-input"
+                class="message-input"
+                placeholder="Type a message..."
+                rows="1"
+            ></textarea>
+            <button id="send-btn" class="btn-send" title="Send message">
+                <span class="send-icon">&#9654;</span>
+            </button>
+        </div>
+        <div class="input-hint">Press Enter to send, Shift+Enter for new line</div>
+        <footer class="status-bar">
+            <span id="status-indicator" class="status-indicator disconnected"></span>
+            <span id="status-text" class="status-text">Disconnected</span>
+        </footer>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
