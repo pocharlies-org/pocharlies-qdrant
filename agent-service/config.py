@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     llm_api_key: str = "none"
     llm_model: str = ""
     llm_temperature: float = 0.2
-    mcp_servers_path: str = "mcp/mcp_servers.json"
+    mcp_servers_path: str = "mcp_client/mcp_servers.json"
     host: str = "0.0.0.0"
     port: int = 8100
 
