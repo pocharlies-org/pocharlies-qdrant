@@ -51,7 +51,7 @@ services:
       - UVICORN_MAX_CONCURRENT=${UVICORN_MAX_CONCURRENT:-500}
       - TRANSLATE_MAX_CHUNKS=${TRANSLATE_MAX_CHUNKS:-1}
       - TRANSLATE_MAX_INPUT_TOKENS=${TRANSLATE_MAX_INPUT_TOKENS:-12000}
-      - TRANSLATE_MODEL=${TRANSLATE_MODEL:-translation-model}
+      - TRANSLATE_MODEL=${TRANSLATE_MODEL:-cb-gpt-4o-mini}
     networks:
       - skirmshop-network
     extra_hosts:
@@ -64,6 +64,26 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # MCP Server (SSE mode for agent-service connection)
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: pocharlies-mcp
+    restart: unless-stopped
+    environment:
+      - QDRANT_URL=http://pocharlies-qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - POCHARLIES_RAG_URL=http://pocharlies-rag:5000
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-base-en-v1.5}
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
+    networks:
+      - skirmshop-network
+    depends_on:
+      rag-service:
+        condition: service_healthy
 
   # PostgreSQL for agent state, tasks, schedules
   postgres:
@@ -99,7 +119,7 @@ services:
       - RAG_SERVICE_URL=http://pocharlies-rag:5000
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
       - LLM_API_KEY=${LLM_API_KEY:-none}
-      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_MODEL=${LLM_MODEL:-qwen3next-80b}
     networks:
       - skirmshop-network
     extra_hosts:
@@ -109,8 +129,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-      rag-service:
-        condition: service_healthy
+      mcp-server:
+        condition: service_started
 
 volumes:
   qdrant_data:

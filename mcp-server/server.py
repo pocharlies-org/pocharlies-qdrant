@@ -251,7 +251,12 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         qdrant.close()
 
 
-mcp = FastMCP("Qdrant RAG", lifespan=app_lifespan)
+mcp = FastMCP(
+    "Qdrant RAG",
+    lifespan=app_lifespan,
+    host=os.getenv("MCP_HOST", "127.0.0.1"),
+    port=int(os.getenv("MCP_PORT", "8000")),
+)
 
 
 # ── Helper functions ──────────────────────────────────────────────

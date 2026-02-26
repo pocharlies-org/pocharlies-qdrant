@@ -2,7 +2,7 @@
   "servers": {
     "pocharlies-rag": {
       "type": "sse",
-      "url": "http://pocharlies-rag:5000/mcp/sse",
+      "url": "http://pocharlies-mcp:8000/sse",
       "description": "Pocharlies RAG - web crawling, products, competitors, translation"
     }
   }

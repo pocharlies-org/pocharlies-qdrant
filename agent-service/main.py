@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from graphs.supervisor import create_supervisor
 from mcp_client.manager import MCPManager
-from state.checkpointer import get_checkpointer
+from state.checkpointer import get_checkpointer_cm
 from state.database import engine
 from state.models import Base
 
@@ -30,8 +30,10 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables ready")
 
-    # 2. Initialize LangGraph checkpointer
-    checkpointer = await get_checkpointer()
+    # 2. Initialize LangGraph checkpointer (context manager)
+    checkpointer_cm = get_checkpointer_cm()
+    checkpointer = await checkpointer_cm.__aenter__()
+    await checkpointer.setup()
     app.state.checkpointer = checkpointer
     logger.info("LangGraph checkpointer ready")
 
@@ -51,6 +53,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Agent service shutting down...")
     await mcp_manager.stop()
+    await checkpointer_cm.__aexit__(None, None, None)
     await engine.dispose()
     logger.info("Cleanup complete")
 
