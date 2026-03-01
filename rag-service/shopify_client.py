@@ -73,7 +73,7 @@ class ShopifyClient:
 
                 # Pagination via Link header
                 url = None
-                params = {}  # params only for first request
+                params = None  # subsequent pages use URL params from Link header
                 link_header = resp.headers.get("link", "")
                 if 'rel="next"' in link_header:
                     for part in link_header.split(","):
@@ -112,7 +112,7 @@ class ShopifyClient:
                     break
 
                 url = None
-                params = {}
+                params = None  # subsequent pages use URL params from Link header
                 link_header = resp.headers.get("link", "")
                 if 'rel="next"' in link_header:
                     for part in link_header.split(","):
