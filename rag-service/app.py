@@ -1011,6 +1011,15 @@ async def product_sync(request: ProductSyncRequest):
     return {"job_id": job_id, "status": "running", "sync_type": placeholder.sync_type}
 
 
+@app.get("/products/sync/history")
+async def sync_history():
+    """Get sync state history."""
+    if not sync_state_store:
+        return {"history": [], "message": "Redis not available"}
+    history = await sync_state_store.get_sync_history(limit=10)
+    return {"history": history}
+
+
 @app.get("/products/sync/{job_id}")
 async def product_sync_status(job_id: str):
     """Get product sync job status."""
@@ -1142,15 +1151,6 @@ async def catalog_search(request: CatalogSearchRequest):
     all_results = all_results[:request.top_k]
 
     return {"results": all_results, "query": request.query, "types": types}
-
-
-@app.get("/products/sync/history")
-async def sync_history():
-    """Get sync state history."""
-    if not sync_state_store:
-        return {"history": [], "message": "Redis not available"}
-    history = await sync_state_store.get_sync_history(limit=10)
-    return {"history": history}
 
 
 @app.post("/catalog/full-sync")
