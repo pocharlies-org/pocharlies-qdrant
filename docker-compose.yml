@@ -47,12 +47,15 @@ services:
       - SHOPIFY_ACCESS_TOKEN=${SHOPIFY_ACCESS_TOKEN:-}
       - RERANKER_MODEL=${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
       - RERANKER_ENABLED=${RERANKER_ENABLED:-true}
-      - UVICORN_WORKERS=${UVICORN_WORKERS:-4}
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-40}
       - UVICORN_MAX_CONCURRENT=${UVICORN_MAX_CONCURRENT:-500}
       - TRANSLATE_MAX_CHUNKS=${TRANSLATE_MAX_CHUNKS:-1}
       - TRANSLATE_MAX_INPUT_TOKENS=${TRANSLATE_MAX_INPUT_TOKENS:-12000}
       - TRANSLATE_MODEL=${TRANSLATE_MODEL:-}
       - SHOPIFY_WEBHOOK_SECRET=${SHOPIFY_WEBHOOK_SECRET:-}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - skirmshop-network
     extra_hosts:
@@ -61,10 +64,11 @@ services:
       - qdrant
       - redis
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "curl", "-f", "--max-time", "25", "http://localhost:5000/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
 
   # MCP Server (SSE mode for agent-service connection)
   mcp-server:

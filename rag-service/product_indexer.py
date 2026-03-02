@@ -412,6 +412,8 @@ class ProductIndexer:
                     "text": r.payload.get("text", ""),
                     "fps": r.payload.get("fps"),
                     "material": r.payload.get("material"),
+                    "inventory_quantity": r.payload.get("inventory_quantity", 0),
+                    "status": r.payload.get("status", ""),
                     "score": round(r.score, 4),
                     "source_type": "product",
                 }
