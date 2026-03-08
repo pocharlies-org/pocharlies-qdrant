@@ -425,3 +425,186 @@ class ShopifyGraphQL:
             "created_at": node.get("createdAt", ""),
             "updated_at": node.get("updatedAt", ""),
         }
+
+    # ── Order queries ───────────────────────────────────────────
+
+    async def fetch_orders(
+        self, query: Optional[str] = None, first: int = 20, status: str = "any"
+    ) -> List[Dict[str, Any]]:
+        """Fetch orders with optional search query and status filter."""
+        gql_query = f"query ListOrders($first: Int!, $query: String) {{"
+        gql_query += """
+            orders(first: $first, query: $query, sortKey: CREATED_AT, reverse: true) {
+                edges {
+                    node {
+                        id name email createdAt
+                        displayFinancialStatus displayFulfillmentStatus
+                        totalPriceSet { shopMoney { amount currencyCode } }
+                        subtotalPriceSet { shopMoney { amount currencyCode } }
+                        totalShippingPriceSet { shopMoney { amount currencyCode } }
+                        totalTaxSet { shopMoney { amount currencyCode } }
+                        customer { firstName lastName email }
+                        shippingAddress { address1 city province country zip }
+                        lineItems(first: 20) {
+                            edges {
+                                node {
+                                    title quantity
+                                    originalUnitPriceSet { shopMoney { amount currencyCode } }
+                                    sku
+                                    variant { title }
+                                }
+                            }
+                        }
+                        fulfillments {
+                            status
+                            trackingInfo { number url company }
+                            createdAt
+                        }
+                        note tags cancelledAt closedAt
+                    }
+                }
+            }
+        }"""
+
+        parts = []
+        if query:
+            parts.append(query)
+        if status and status != "any":
+            parts.append(f"status:{status}")
+        combined_query = " ".join(parts) if parts else None
+
+        variables: Dict[str, Any] = {"first": first}
+        if combined_query:
+            variables["query"] = combined_query
+
+        data = await self.query(gql_query, variables)
+        orders = data.get("orders", {}).get("edges", [])
+        return [self.flatten_graphql_order(e["node"]) for e in orders]
+
+    async def fetch_order(self, id_or_name: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single order by GID or order name (#1234)."""
+        if id_or_name.startswith("gid://"):
+            gid = id_or_name
+        elif id_or_name.startswith("#"):
+            # Search by name
+            orders = await self.fetch_orders(query=f"name:{id_or_name}", first=1)
+            return orders[0] if orders else None
+        else:
+            # Try as order number
+            orders = await self.fetch_orders(query=f"name:#{id_or_name}", first=1)
+            return orders[0] if orders else None
+
+        data = await self.query("""
+            query GetOrder($id: ID!) {
+                order(id: $id) {
+                    id name email createdAt
+                    displayFinancialStatus displayFulfillmentStatus
+                    totalPriceSet { shopMoney { amount currencyCode } }
+                    subtotalPriceSet { shopMoney { amount currencyCode } }
+                    totalShippingPriceSet { shopMoney { amount currencyCode } }
+                    totalTaxSet { shopMoney { amount currencyCode } }
+                    customer { firstName lastName email phone }
+                    shippingAddress { address1 address2 city province country zip phone }
+                    billingAddress { address1 address2 city province country zip }
+                    lineItems(first: 50) {
+                        edges {
+                            node {
+                                title quantity sku
+                                originalUnitPriceSet { shopMoney { amount currencyCode } }
+                                variant { title }
+                            }
+                        }
+                    }
+                    fulfillments {
+                        status
+                        trackingInfo { number url company }
+                        createdAt updatedAt
+                    }
+                    note tags cancelledAt closedAt
+                    paymentGatewayNames
+                    refunds(first: 10) {
+                        id createdAt
+                        totalRefundedSet { shopMoney { amount currencyCode } }
+                        note
+                    }
+                }
+            }
+        """, {"id": gid})
+        node = data.get("order")
+        return self.flatten_graphql_order(node) if node else None
+
+    @staticmethod
+    def flatten_graphql_order(node: Dict[str, Any]) -> Dict[str, Any]:
+        """Flatten a GraphQL order node into a clean dict."""
+        def money(field):
+            m = node.get(field, {}) or {}
+            s = m.get("shopMoney", {}) or {}
+            return {"amount": s.get("amount", "0.00"), "currency": s.get("currencyCode", "EUR")}
+
+        customer = node.get("customer") or {}
+        shipping = node.get("shippingAddress") or {}
+
+        line_items = []
+        for edge in (node.get("lineItems", {}).get("edges", [])):
+            li = edge.get("node", {})
+            price = li.get("originalUnitPriceSet", {}).get("shopMoney", {})
+            variant = li.get("variant") or {}
+            line_items.append({
+                "title": li.get("title", ""),
+                "variant": variant.get("title", ""),
+                "quantity": li.get("quantity", 0),
+                "sku": li.get("sku", ""),
+                "unit_price": price.get("amount", "0.00"),
+            })
+
+        fulfillments = []
+        for f in (node.get("fulfillments") or []):
+            tracking = f.get("trackingInfo", []) or []
+            fulfillments.append({
+                "status": f.get("status", ""),
+                "created_at": f.get("createdAt", ""),
+                "tracking": [{"number": t.get("number"), "url": t.get("url"), "company": t.get("company")} for t in tracking],
+            })
+
+        refunds = []
+        for r in (node.get("refunds") or []):
+            ref_money = r.get("totalRefundedSet", {}).get("shopMoney", {})
+            refunds.append({
+                "id": r.get("id"),
+                "created_at": r.get("createdAt"),
+                "amount": ref_money.get("amount", "0.00"),
+                "note": r.get("note", ""),
+            })
+
+        return {
+            "id": node.get("id"),
+            "name": node.get("name", ""),
+            "email": node.get("email", ""),
+            "created_at": node.get("createdAt", ""),
+            "financial_status": node.get("displayFinancialStatus", ""),
+            "fulfillment_status": node.get("displayFulfillmentStatus", ""),
+            "total": money("totalPriceSet"),
+            "subtotal": money("subtotalPriceSet"),
+            "shipping_cost": money("totalShippingPriceSet"),
+            "tax": money("totalTaxSet"),
+            "customer": {
+                "name": f"{customer.get('firstName', '')} {customer.get('lastName', '')}".strip(),
+                "email": customer.get("email", ""),
+                "phone": customer.get("phone", ""),
+            },
+            "shipping_address": {
+                "address": shipping.get("address1", ""),
+                "city": shipping.get("city", ""),
+                "province": shipping.get("province", ""),
+                "country": shipping.get("country", ""),
+                "zip": shipping.get("zip", ""),
+            },
+            "line_items": line_items,
+            "fulfillments": fulfillments,
+            "refunds": refunds,
+            "note": node.get("note", ""),
+            "tags": node.get("tags", []),
+            "cancelled_at": node.get("cancelledAt"),
+            "closed_at": node.get("closedAt"),
+            "payment_gateways": node.get("paymentGatewayNames", []),
+        }

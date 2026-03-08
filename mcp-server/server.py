@@ -1507,6 +1507,98 @@ async def collection_stats(
 
 # ── Entry point ───────────────────────────────────────────────────
 
+
+
+# ── 6. Order & Fulfillment Tools ─────────────────────────────────
+
+
+@mcp.tool()
+async def recent_orders(
+    ctx: Context[ServerSession, AppContext],
+    limit: int = 10,
+    status: Optional[str] = None,
+) -> str:
+    """List recent Shopify orders sorted by creation date (newest first).
+    status: open, closed, cancelled, or any (default).
+    Returns order name, customer, total, financial/fulfillment status."""
+
+    await ctx.info(f"Fetching recent orders (limit={limit}, status={status or any})...")
+
+    try:
+        params = {"limit": limit}
+        if status:
+            params["status"] = status
+        data = await _pocharlies_get("/orders", params=params, timeout=30.0)
+        return json.dumps(data, indent=2)
+
+    except httpx.ConnectError:
+        return json.dumps({"error": _connect_error_msg()})
+    except Exception as e:
+        return json.dumps({"error": f"Failed to fetch orders: {str(e)[:300]}"})
+
+
+@mcp.tool()
+async def search_orders(
+    query: str,
+    ctx: Context[ServerSession, AppContext],
+    limit: int = 10,
+) -> str:
+    """Search orders by customer name, email, or order number (e.g. #1234).
+    Uses Shopify order search syntax."""
+
+    await ctx.info(f"Searching orders: {query}...")
+
+    try:
+        data = await _pocharlies_get("/orders", params={"query": query, "limit": limit}, timeout=30.0)
+        return json.dumps(data, indent=2)
+
+    except httpx.ConnectError:
+        return json.dumps({"error": _connect_error_msg()})
+    except Exception as e:
+        return json.dumps({"error": f"Order search failed: {str(e)[:300]}"})
+
+
+@mcp.tool()
+async def get_order(
+    id_or_name: str,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Get full order details including line items, shipping, payment, and notes.
+    Accepts order name (#1234), order number (1234), or Shopify GID."""
+
+    await ctx.info(f"Getting order: {id_or_name}...")
+
+    try:
+        data = await _pocharlies_get(f"/orders/{id_or_name}", timeout=30.0)
+        return json.dumps(data, indent=2)
+
+    except httpx.ConnectError:
+        return json.dumps({"error": _connect_error_msg()})
+    except Exception as e:
+        return json.dumps({"error": f"Order lookup failed: {str(e)[:300]}"})
+
+
+@mcp.tool()
+async def get_shipment_status(
+    id_or_name: str,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Get fulfillment/shipping status for an order.
+    Returns tracking numbers, carrier, delivery status, and fulfillment dates.
+    Accepts order name (#1234), order number (1234), or Shopify GID."""
+
+    await ctx.info(f"Checking shipment status for: {id_or_name}...")
+
+    try:
+        data = await _pocharlies_get(f"/orders/{id_or_name}/fulfillments", timeout=30.0)
+        return json.dumps(data, indent=2)
+
+    except httpx.ConnectError:
+        return json.dumps({"error": _connect_error_msg()})
+    except Exception as e:
+        return json.dumps({"error": f"Shipment status lookup failed: {str(e)[:300]}"})
+
 if __name__ == "__main__":
     transport = sys.argv[1] if len(sys.argv) > 1 else "stdio"
-    mcp.run(transport=transport)
+    mount = "/mcp" if transport == "sse" else None
+    mcp.run(transport=transport, mount_path=mount)

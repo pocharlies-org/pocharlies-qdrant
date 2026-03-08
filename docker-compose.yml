@@ -86,6 +86,8 @@ services:
       - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
     networks:
       - skirmshop-network
+    ports:
+      - "127.0.0.1:8002:8000"
     depends_on:
       rag-service:
         condition: service_healthy

@@ -65,7 +65,14 @@ Rules:
 - Maintain the same formatting and paragraph structure
 - Use natural, fluent {target_name} appropriate for an e-commerce product listing
 - Return ONLY the translations as a JSON array of strings, matching input order
-- The array must have exactly the same number of elements as the input"""
+- The array must have exactly the same number of elements as the input
+
+## CRITICAL LENGTH LIMITS (Shopify validation)
+- Product TITLES: maximum 255 characters. If the translation would exceed 255 chars, shorten it naturally while keeping the essential product info (brand, model, key specs). Never pad or expand titles.
+- Product HANDLES (URL slugs): maximum 255 characters. Handles must be lowercase with hyphens only.
+- SEO meta_title: maximum 70 characters
+- SEO meta_description: maximum 320 characters
+- If any input text is already short (under 100 chars), the translation MUST stay similarly short. Do NOT add explanatory text, parenthetical clarifications, or expand abbreviations in titles."""
 
 
 # ── Spec Normalization ──────────────────────────────────────────
@@ -329,9 +336,12 @@ class TranslationPipeline:
         self._model_id = model_id
 
     async def _get_model_id(self) -> str:
-        """Return the LiteLLM model alias for translation."""
+        """Return the LiteLLM model alias for translation.
+        Reads TRANSLATE_MODEL env var (defaults to 'local').
+        LiteLLM owns all routing/fallback decisions from here.
+        """
         if not self._model_id:
-            self._model_id = "translation-model"
+            self._model_id = os.environ.get("TRANSLATE_MODEL", "local")
         return self._model_id
 
     async def translate_batch(
@@ -469,7 +479,6 @@ class TranslationPipeline:
                         {"role": "user", "content": f"Translate these {len(texts)} texts:\n\n{numbered}"},
                     ],
                     max_tokens=max_tokens,
-                    temperature=0.2,
                     timeout=300,
                     user="rag:translate",
                 ),
