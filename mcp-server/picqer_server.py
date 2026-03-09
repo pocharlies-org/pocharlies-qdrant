@@ -11,94 +11,22 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Optional
+from typing import Any
 
-import httpx
 from mcp.server.fastmcp import FastMCP
+
+from picqer_client import PicqerClient, PicqerConfig
 
 # Logging to stderr (stdout reserved for MCP JSON-RPC)
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("picqer-mcp")
 
 # ── Configuration ──────────────────────────────────────────────────────────
-PICQER_SUBDOMAIN = os.getenv("PICQER_SUBDOMAIN", "skirmshop")
-PICQER_API_KEY = os.getenv(
-    "PICQER_API_KEY", "Tcp3JY1GyYxnyR4Of1OrqqkE8y41vUv4zZddROAHa5UfUqlp"
+_config = PicqerConfig(
+    subdomain=os.getenv("PICQER_SUBDOMAIN", "skirmshop"),
+    api_key=os.getenv("PICQER_API_KEY", "Tcp3JY1GyYxnyR4Of1OrqqkE8y41vUv4zZddROAHa5UfUqlp"),
 )
-BASE_URL = f"https://{PICQER_SUBDOMAIN}.picqer.com/api/v1"
-
-
-# ── API Client ─────────────────────────────────────────────────────────────
-class PicqerAPI:
-    """Async HTTP client for Picqer API v1 with Basic auth and pagination."""
-
-    def __init__(self):
-        self._client: Optional[httpx.AsyncClient] = None
-
-    @property
-    def http(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                base_url=BASE_URL,
-                auth=(PICQER_API_KEY, "x"),
-                headers={
-                    "User-Agent": "SkirmshopMCP/1.0 (mcp@skirmshop.es)",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-                timeout=30.0,
-            )
-        return self._client
-
-    async def _request(self, method: str, path: str, params=None, data=None) -> Any:
-        try:
-            r = await self.http.request(method, path, params=params, json=data)
-            r.raise_for_status()
-            if r.status_code == 204 or not r.content:
-                return {"status": "ok"}
-            return r.json()
-        except httpx.HTTPStatusError as e:
-            body = e.response.text
-            try:
-                body = e.response.json()
-            except Exception:
-                pass
-            return {"error": True, "status_code": e.response.status_code, "detail": body}
-        except httpx.RequestError as e:
-            return {"error": True, "detail": str(e)}
-
-    async def get(self, path: str, params: dict = None) -> Any:
-        return await self._request("GET", path, params=params)
-
-    async def post(self, path: str, data: dict = None) -> Any:
-        return await self._request("POST", path, data=data)
-
-    async def put(self, path: str, data: dict = None) -> Any:
-        return await self._request("PUT", path, data=data)
-
-    async def delete(self, path: str, params: dict = None) -> Any:
-        return await self._request("DELETE", path, params=params)
-
-    async def get_list(self, path: str, params: dict = None, max_results: int = 500) -> Any:
-        """Paginated GET that fetches up to max_results items."""
-        results = []
-        offset = 0
-        p = dict(params or {})
-        while len(results) < max_results:
-            p["offset"] = offset
-            batch = await self._request("GET", path, params=p)
-            if isinstance(batch, dict) and batch.get("error"):
-                return batch
-            if not isinstance(batch, list) or not batch:
-                break
-            results.extend(batch)
-            if len(batch) < 100:
-                break
-            offset += 100
-        return results[:max_results]
-
-
-api = PicqerAPI()
+api = PicqerClient(_config)
 
 
 # ── MCP Server ─────────────────────────────────────────────────────────────
@@ -1505,8 +1433,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "sse":
         transport = "sse"
 
-    logger.info(f"Starting Picqer WMS MCP server ({transport}) → {BASE_URL}")
-    logger.info(f"Subdomain: {PICQER_SUBDOMAIN}")
+    logger.info(f"Starting Picqer WMS MCP server ({transport}) → {_config.base_url}")
+    logger.info(f"Subdomain: {_config.subdomain}")
 
     if transport == "sse":
         mcp.settings.host = os.getenv("MCP_HOST", "0.0.0.0")
