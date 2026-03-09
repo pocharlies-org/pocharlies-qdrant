@@ -545,9 +545,9 @@ async def picqer_picklist_products(
         case "set_packaging":
             return R(await api.put(f"/picklists/{picklist_id}/packaging-advice", p))
         case "pdf":
-            return R({"url": f"{BASE_URL}/picklists/{picklist_id}/picklistpdf"})
+            return R({"url": f"{_config.base_url}/picklists/{picklist_id}/picklistpdf"})
         case "packing_pdf":
-            return R({"url": f"{BASE_URL}/picklists/{picklist_id}/packinglistpdf"})
+            return R({"url": f"{_config.base_url}/picklists/{picklist_id}/packinglistpdf"})
         case _:
             return f"Unknown action: {action}. Use: update_pick_locations, packaging_advice, set_packaging, pdf, packing_pdf"
 
@@ -626,7 +626,7 @@ async def picqer_picklist_batches(
         case "assign":
             return R(await api.post(f"/picklists/batches/{id}/assign", p))
         case "pdf":
-            return R({"url": f"{BASE_URL}/picklists/batches/{id}/pdf"})
+            return R({"url": f"{_config.base_url}/picklists/batches/{id}/pdf"})
         case "list_comments":
             return R(await api.get(f"/picklists/batches/{id}/comments"))
         case "add_comment":
