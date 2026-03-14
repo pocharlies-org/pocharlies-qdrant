@@ -287,11 +287,16 @@ RULES:
 9. Maximum 1500 words"""
 
         try:
-            response = self.llm_client.chat.completions.create(
-                model=self.llm_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=2000,
-                timeout=120,  # 2 min — recommendation notes are long
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.llm_client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=2000,
+                    timeout=180,
+                    extra_body={"request_timeout": 180},  # LiteLLM proxy timeout
+                ),
             )
             content = response.choices[0].message.content
 
