@@ -291,6 +291,7 @@ RULES:
                 model=self.llm_model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=2000,
+                timeout=120,  # 2 min — recommendation notes are long
             )
             content = response.choices[0].message.content
 
