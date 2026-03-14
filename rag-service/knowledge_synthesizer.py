@@ -277,8 +277,8 @@ CONTEXT FROM OUR GUIDES:
 
 RULES:
 1. ONLY recommend products from the lists above — never invent handles
-2. Use [TOOL:show_product:{{handle}}] for every product you recommend
-3. Use [[handle]] wiki-links for cross-references to other platform notes
+2. For EVERY product you recommend, include the exact tool call with the handle from the product list. Example: [TOOL:show_product:stalker-kraken-srs-70-concave-bucking]
+3. Use the EXACT handle string from the product lists above — do not modify, abbreviate, or wrap in braces
 4. Be specific: FPS ranges, spring weights, barrel specs, joule ratings
 5. If a critical part is out of stock, say so clearly and suggest alternatives from the in-stock list
 6. Structure as: Goal explanation → Priority-ordered upgrade steps → Compatibility notes → Budget tiers
