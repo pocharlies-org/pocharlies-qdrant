@@ -36,6 +36,12 @@ from catalog_indexer import CatalogIndexer
 from sync_state import SyncStateStore, ContentHashStore
 from webhook_handler import ShopifyWebhookHandler
 from reranker import get_reranker, init_reranker
+from vault_builder import VaultBuilder
+from vault_indexer import VaultIndexer
+from content_learner import ContentLearner
+from deep_analyzer import DeepAnalyzer
+from firecrawl_client import FirecrawlClient
+from research_agent import ResearchAgent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,6 +77,9 @@ LLM_MODEL = "local"
 rag_agent = None  # Agent SDK instance, created at startup
 redis_client = None  # Async Redis client for session persistence
 session_store: SessionStore = None
+vault_builder: VaultBuilder = None
+vault_indexer_instance: VaultIndexer = None
+content_learner: ContentLearner = None
 
 # Active crawl jobs + queue
 crawl_jobs: Dict[str, CrawlJob] = {}
@@ -208,6 +217,47 @@ async def lifespan(app: FastAPI):
             logger.info(f"Reranker loaded: {RERANKER_MODEL}")
         except Exception as e:
             logger.warning(f"Reranker load failed (search will work without reranking): {e}")
+
+    # Knowledge Vault (Obsidian brain)
+    global vault_builder, vault_indexer_instance, content_learner
+    vault_path = os.getenv("VAULT_PATH", "/app/knowledge-vault")
+    config_path = os.getenv("VAULT_CONFIG", "/app/vault_config.yaml")
+    # Fallback to local paths for dev
+    if not os.path.exists(vault_path):
+        vault_path = os.path.join(os.path.dirname(__file__), "..", "knowledge-vault")
+    if not os.path.exists(config_path):
+        config_path = os.path.join(os.path.dirname(__file__), "..", "vault_config.yaml")
+
+    try:
+        vault_builder = VaultBuilder(
+            vault_path=vault_path,
+            config_path=config_path,
+            rag_base_url="http://localhost:5000",
+            llm_client=llm_client,
+            redis_client=redis_client,
+            glossary=GLOSSARY,
+            competitor_indexer=competitor_indexer,
+            product_classifier=product_classifier,
+            crawl_jobs=crawl_jobs,
+            crawl_queue=crawl_queue,
+        )
+        vault_indexer_instance = VaultIndexer(
+            vault_path=vault_path,
+            qdrant_url=QDRANT_URL,
+            qdrant_api_key=QDRANT_API_KEY,
+            model=embedding_model,
+            redis_client=redis_client,
+        )
+        content_learner = ContentLearner(
+            vault_path=vault_path,
+            config_path=config_path,
+            llm_client=llm_client,
+            redis_client=redis_client,
+            competitor_indexer=competitor_indexer,
+        )
+        logger.info(f"Knowledge vault initialized: {vault_path} ({len(content_learner.sources)} content sources)")
+    except Exception as e:
+        logger.warning(f"Knowledge vault init failed: {e}")
 
     logger.info("RAG service initialized successfully")
 
@@ -1157,6 +1207,82 @@ def _augment_query_for_pages(query: str) -> str:
     return f"{query} {' '.join(additions)}"
 
 
+# ── Query intent extraction for auto-filtering ──────────────────────
+# Maps query keywords → Qdrant category values (same categories as shopify_client.py)
+_CATEGORY_KEYWORDS: list[tuple[list[str], str]] = [
+    (["gbb", "gas blowback", "gas blow back"], "gbb"),
+    (["aeg", "electric", "electrica", "automatica"], "aeg"),
+    (["sniper", "bolt action", "bolt-action", "cerrojo", "francotirador"], "sniper"),
+    (["pistol", "pistola", "handgun", "sidearm"], "pistol"),
+    (["shotgun", "escopeta"], "shotgun"),
+    (["smg", "submachine", "subfusil"], "smg"),
+    (["grenade", "launcher", "lanzagranadas", "granada"], "launcher"),
+    (["magazine", "cargador de bolas", "mag ", "hi-cap", "mid-cap", "low-cap"], "magazine"),
+    (["battery", "bateria", "batería", "charger", "cargador bater"], "battery"),
+    (["scope", "sight", "optic", "mira", "visor", "red dot", "holographic"], "optic"),
+    (["bb", "bbs", "bola", "bolas", "municion", "munición", "ammo", "ammunition"], "ammunition"),
+    (["vest", "plate carrier", "chaleco", "tactical gear"], "gear"),
+    (["mask", "goggle", "gafas", "proteccion", "protección", "protection", "gafa"], "protection"),
+]
+
+# Brand aliases: query terms → canonical brand name in Qdrant
+_BRAND_KEYWORDS: dict[str, str] = {
+    "nuprol": "Nuprol",
+    "specna": "Specna Arms", "specna arms": "Specna Arms",
+    "silverback": "Silverback", "srs": "Silverback",
+    "novritsch": "Novritsch",
+    "tokyo marui": "Tokyo Marui", "marui": "Tokyo Marui",
+    "g&g": "G&G", "g and g": "G&G",
+    "cyma": "CYMA",
+    "modify": "Modify",
+    "action army": "Action Army",
+    "maple leaf": "Maple Leaf",
+    "ares": "Ares", "amoeba": "Ares",
+    "vfc": "VFC",
+    "krytac": "Krytac",
+    "lct": "LCT",
+    "ics": "ICS",
+    "asg": "ASG",
+    "we": "WE",
+    "kjw": "KJW",
+    "classic army": "Classic Army",
+    "jag arms": "JAG Arms",
+    "valken": "Valken",
+    "warrior assault": "Warrior Assault Systems",
+    "emerson": "Emerson",
+    "invader gear": "Invader Gear",
+}
+
+
+def _extract_search_intent(query: str) -> dict:
+    """Extract category and brand intent from a natural-language query.
+
+    Returns dict with optional 'category' and 'brand' keys.
+    Only sets a value when there's a clear keyword match.
+    """
+    lower = query.lower()
+    result = {}
+
+    # Extract category
+    for keywords, category in _CATEGORY_KEYWORDS:
+        for kw in keywords:
+            # Use word boundary-ish matching to avoid false positives
+            # e.g. "bb" in "rubber" would be wrong, but "bb" or "bbs" standalone is fine
+            if f" {kw}" in f" {lower}" or lower.startswith(kw):
+                result["category"] = category
+                break
+        if "category" in result:
+            break
+
+    # Extract brand (check longer phrases first to avoid partial matches)
+    for alias in sorted(_BRAND_KEYWORDS.keys(), key=len, reverse=True):
+        if alias in lower:
+            result["brand"] = _BRAND_KEYWORDS[alias]
+            break
+
+    return result
+
+
 @app.post("/catalog/search")
 async def catalog_search(request: CatalogSearchRequest):
     """Unified search across products, collections, and pages.
@@ -1164,9 +1290,19 @@ async def catalog_search(request: CatalogSearchRequest):
     Uses a balanced merge strategy: each type gets a guaranteed minimum
     number of slots so that high-scoring products don't push out
     relevant guide/page chunks.
+
+    Auto-extracts category/brand from query when not explicitly provided.
     """
     types = request.types or ["product", "collection", "page"]
     results_by_type: dict[str, list] = {}
+
+    # Auto-extract filters from query when not explicitly set
+    intent = _extract_search_intent(request.query)
+    effective_brand = request.brand or intent.get("brand")
+    effective_category = request.category or intent.get("category")
+
+    if intent:
+        logger.info(f"Query intent extracted: {intent} (effective brand={effective_brand}, category={effective_category})")
 
     if "product" in types:
         reranker = get_reranker()
@@ -1174,8 +1310,8 @@ async def catalog_search(request: CatalogSearchRequest):
         products = product_indexer.search(
             query=request.query,
             top_k=effective_top_k,
-            brand_filter=request.brand,
-            category_filter=request.category,
+            brand_filter=effective_brand,
+            category_filter=effective_category,
         )
         if reranker and products:
             products = reranker.rerank(request.query, products, top_k=request.top_k)
@@ -1188,6 +1324,11 @@ async def catalog_search(request: CatalogSearchRequest):
         # Augment query with English keywords for cross-language guide search
         page_query = _augment_query_for_pages(request.query)
         results_by_type["page"] = catalog_indexer.search_pages(page_query, top_k=request.top_k)
+
+    if "recommendation" in types and vault_indexer_instance:
+        results_by_type["recommendation"] = vault_indexer_instance.search_recommendations(
+            query=request.query, top_k=request.top_k
+        )
 
     # Balanced merge: guarantee min slots per type, fill remainder by score
     active_types = [t for t in types if results_by_type.get(t)]
@@ -1941,3 +2082,265 @@ async def get_order_fulfillments(id_or_name: str):
     except Exception as e:
         logger.error(f"Fulfillment lookup failed: {e}")
         raise HTTPException(status_code=500, detail=str(e)[:300])
+
+
+# ── Knowledge Vault Endpoints ────────────────────────────────
+
+
+@app.post("/knowledge/rebuild")
+async def knowledge_rebuild():
+    """Trigger full vault rebuild: competitors + content sources. Redis-locked."""
+    if not vault_builder:
+        raise HTTPException(status_code=503, detail="Knowledge vault not configured")
+
+    result = await vault_builder.build_full()
+    if result.errors and result.errors[0] == "Rebuild already in progress":
+        raise HTTPException(status_code=409, detail="Rebuild already in progress")
+
+    # Phase 2: Content learning (runs after competitors)
+    content_result = None
+    if content_learner and content_learner.sources:
+        try:
+            content_result = await content_learner.learn()
+            result.notes_written += content_result.notes_written
+            logger.info(f"Content learning: {content_result.sources_processed} sources, {content_result.notes_written} notes")
+        except Exception as e:
+            logger.error(f"Content learning failed: {e}")
+            result.errors.append(f"Content learning: {str(e)[:200]}")
+
+    # Auto-reindex after build
+    if vault_indexer_instance and result.notes_written > 0:
+        asyncio.create_task(_reindex_vault())
+
+    response = {
+        "status": "completed",
+        "competitors_processed": result.competitors_processed,
+        "competitors_failed": result.competitors_failed,
+        "notes_written": result.notes_written,
+        "errors": result.errors,
+        "competitor_results": result.competitor_results,
+    }
+    if content_result:
+        response["content_learning"] = {
+            "sources_processed": content_result.sources_processed,
+            "sources_failed": content_result.sources_failed,
+            "guides_extracted": content_result.guides_extracted,
+            "trends_detected": content_result.trends_detected,
+        }
+    return response
+
+
+@app.post("/knowledge/rebuild/{domain}")
+async def knowledge_rebuild_domain(domain: str):
+    """Rebuild vault for a single competitor domain."""
+    if not vault_builder:
+        raise HTTPException(status_code=503, detail="Knowledge vault not configured")
+
+    result = await vault_builder.build_incremental(domain)
+    if result.errors and result.errors[0] == "Rebuild already in progress":
+        raise HTTPException(status_code=409, detail="Rebuild already in progress")
+
+    # Auto-reindex after build
+    if vault_indexer_instance and result.notes_written > 0:
+        asyncio.create_task(_reindex_vault())
+
+    return {
+        "status": "completed",
+        "competitors_processed": result.competitors_processed,
+        "notes_written": result.notes_written,
+        "errors": result.errors,
+    }
+
+
+@app.post("/knowledge/reindex")
+async def knowledge_reindex(force: bool = False):
+    """Re-index vault notes into Qdrant knowledge_brain collection."""
+    if not vault_indexer_instance:
+        raise HTTPException(status_code=503, detail="Knowledge vault not configured")
+
+    result = await vault_indexer_instance.index_vault(force=force)
+    return {"status": "completed", **result}
+
+
+@app.post("/knowledge/learn")
+async def knowledge_learn():
+    """Trigger content learning only (Reddit, forums, blogs — no competitor product extraction)."""
+    if not content_learner:
+        raise HTTPException(status_code=503, detail="Content learner not configured")
+
+    result = await content_learner.learn()
+
+    # Auto-reindex after learning
+    if vault_indexer_instance and result.notes_written > 0:
+        asyncio.create_task(_reindex_vault())
+
+    return {
+        "status": "completed",
+        "sources_processed": result.sources_processed,
+        "sources_failed": result.sources_failed,
+        "notes_written": result.notes_written,
+        "guides_extracted": result.guides_extracted,
+        "trends_detected": result.trends_detected,
+        "errors": result.errors,
+        "source_results": result.source_results,
+    }
+
+
+class DeepAnalyzeRequest(BaseModel):
+    urls: Optional[List[str]] = None
+
+
+@app.post("/knowledge/deep-analyze")
+async def knowledge_deep_analyze(request: DeepAnalyzeRequest = None):
+    """Run deep competitive analysis on all competitors or specific URLs.
+
+    Uses Firecrawl sitemap mapping + strategic page scraping + LLM deep analysis.
+    Much faster than full rebuild — analyzes site structure, not every page.
+    """
+    vault_path = os.getenv("VAULT_PATH", "/app/knowledge-vault")
+    fc = FirecrawlClient()
+
+    if not await fc.is_available():
+        raise HTTPException(status_code=503, detail="Firecrawl not available at " + fc.base_url)
+
+    analyzer = DeepAnalyzer(firecrawl=fc, llm_client=llm_client, vault_path=vault_path)
+
+    # Determine targets
+    urls = request.urls if request else None
+    if urls:
+        targets = [{"url": u, "name": u.split("//")[1].split("/")[0], "slug": u.split("//")[1].split("/")[0].replace(".", "-").replace("www-", "")} for u in urls]
+    elif vault_builder:
+        targets = [{"url": c.url, "name": c.name, "slug": c.slug} for c in vault_builder.competitors]
+    else:
+        raise HTTPException(status_code=400, detail="No targets specified and no competitors configured")
+
+    results = {}
+    notes_written = 0
+    for target in targets:
+        logger.info(f"Deep analyzing: {target['name']} ({target['url']})")
+        result = await analyzer.analyze_competitor(target["url"], target["name"], target["slug"])
+        note_path = analyzer.write_deep_note(result)
+        notes_written += 1
+        results[target["slug"]] = {
+            "name": target["name"],
+            "pages_scraped": result.get("pages_scraped", 0),
+            "sitemap_urls": result.get("sitemap", {}).get("total_urls", 0),
+            "has_analysis": bool(result.get("analysis", {}).get("MARKET_POSITIONING")),
+            "errors": result.get("errors", []),
+        }
+
+    # Reindex vault after analysis
+    if vault_indexer_instance and notes_written > 0:
+        asyncio.create_task(_reindex_vault())
+
+    return {
+        "status": "completed",
+        "competitors_analyzed": len(results),
+        "notes_written": notes_written,
+        "results": results,
+    }
+
+
+@app.post("/knowledge/research")
+async def knowledge_research():
+    """Run research agent to fill intelligence gaps in competitor analyses.
+
+    Reads existing deep analysis notes, identifies missing data (brands, categories,
+    prices, services, reputation), and researches via web search + LLM extraction.
+    Designed to run hourly to continuously improve intelligence.
+    """
+    vault_path = os.getenv("VAULT_PATH", "/app/knowledge-vault")
+    fc = FirecrawlClient()
+
+    if not await fc.is_available():
+        raise HTTPException(status_code=503, detail="Firecrawl not available")
+
+    agent = ResearchAgent(firecrawl=fc, llm_client=llm_client, vault_path=vault_path)
+    result = await agent.research_all()
+
+    # Reindex after research updates
+    if vault_indexer_instance and result.get("notes_updated", 0) > 0:
+        asyncio.create_task(_reindex_vault())
+
+    return result
+
+
+@app.get("/knowledge/status")
+async def knowledge_status():
+    """Get vault build status, note count, and health."""
+    if not vault_builder:
+        raise HTTPException(status_code=503, detail="Knowledge vault not configured")
+
+    status = vault_builder.get_status()
+
+    # Add Qdrant collection info
+    if vault_indexer_instance:
+        collection_info = vault_indexer_instance.get_collection_info()
+        if collection_info:
+            status["qdrant"] = collection_info
+
+    # Add content learner status
+    if content_learner:
+        status["content_learning"] = content_learner.get_status()
+
+    return status
+
+
+@app.get("/knowledge/notes")
+async def knowledge_notes():
+    """List all vault notes with their frontmatter."""
+    if not vault_builder:
+        raise HTTPException(status_code=503, detail="Knowledge vault not configured")
+
+    import frontmatter as fm
+    from pathlib import Path
+
+    vault_path = Path(vault_builder.vault_path)
+    notes = []
+    for md_file in vault_path.rglob("*.md"):
+        rel = md_file.relative_to(vault_path)
+        if any(part in ("_templates", "_meta", ".obsidian") for part in rel.parts):
+            continue
+        try:
+            post = fm.load(str(md_file))
+            notes.append({
+                "path": str(rel),
+                "type": post.metadata.get("type", ""),
+                "frontmatter": dict(post.metadata),
+            })
+        except Exception:
+            notes.append({"path": str(rel), "type": "unknown", "frontmatter": {}})
+
+    return {"notes": notes, "count": len(notes)}
+
+
+@app.get("/knowledge/note/{path:path}")
+async def knowledge_note(path: str):
+    """Read a single vault note by relative path."""
+    if not vault_builder:
+        raise HTTPException(status_code=503, detail="Knowledge vault not configured")
+
+    from pathlib import Path
+    note_path = Path(vault_builder.vault_path) / path
+    if not note_path.exists() or not note_path.suffix == ".md":
+        raise HTTPException(status_code=404, detail=f"Note not found: {path}")
+
+    # Security: ensure path doesn't escape vault
+    try:
+        note_path.resolve().relative_to(Path(vault_builder.vault_path).resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+
+    return {
+        "path": path,
+        "content": note_path.read_text(encoding="utf-8"),
+    }
+
+
+async def _reindex_vault():
+    """Background task to reindex vault after a build."""
+    try:
+        result = await vault_indexer_instance.index_vault()
+        logger.info(f"Auto-reindex after build: {result}")
+    except Exception as e:
+        logger.error(f"Auto-reindex failed: {e}")
