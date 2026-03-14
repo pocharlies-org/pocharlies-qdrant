@@ -39,6 +39,7 @@ from reranker import get_reranker, init_reranker
 from vault_builder import VaultBuilder
 from vault_indexer import VaultIndexer
 from content_learner import ContentLearner
+from knowledge_synthesizer import KnowledgeSynthesizer
 from deep_analyzer import DeepAnalyzer
 from firecrawl_client import FirecrawlClient
 from research_agent import ResearchAgent
@@ -80,6 +81,7 @@ session_store: SessionStore = None
 vault_builder: VaultBuilder = None
 vault_indexer_instance: VaultIndexer = None
 content_learner: ContentLearner = None
+knowledge_synthesizer: KnowledgeSynthesizer = None
 
 # Active crawl jobs + queue
 crawl_jobs: Dict[str, CrawlJob] = {}
@@ -219,7 +221,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Reranker load failed (search will work without reranking): {e}")
 
     # Knowledge Vault (Obsidian brain)
-    global vault_builder, vault_indexer_instance, content_learner
+    global vault_builder, vault_indexer_instance, content_learner, knowledge_synthesizer
     vault_path = os.getenv("VAULT_PATH", "/app/knowledge-vault")
     config_path = os.getenv("VAULT_CONFIG", "/app/vault_config.yaml")
     # Fallback to local paths for dev
@@ -256,8 +258,54 @@ async def lifespan(app: FastAPI):
             competitor_indexer=competitor_indexer,
         )
         logger.info(f"Knowledge vault initialized: {vault_path} ({len(content_learner.sources)} content sources)")
+
+        # Knowledge Synthesizer (generates recommendation notes)
+        knowledge_synthesizer = KnowledgeSynthesizer(
+            vault_path=vault_path,
+            llm_client=llm_client,
+            product_indexer=product_indexer,
+            catalog_indexer=catalog_indexer,
+            vault_indexer=vault_indexer_instance,
+            redis_client=redis_client,
+        )
+        logger.info("Knowledge synthesizer initialized")
+
     except Exception as e:
         logger.warning(f"Knowledge vault init failed: {e}")
+
+    # Daily rebuild scheduler
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+
+    _rebuild_in_progress = False
+
+    async def _daily_rebuild():
+        """Sequential rebuild chain. Guarded against concurrent runs."""
+        nonlocal _rebuild_in_progress
+        if _rebuild_in_progress:
+            logger.warning("Daily rebuild skipped — already in progress")
+            return
+        _rebuild_in_progress = True
+        logger.info("Daily rebuild started")
+        try:
+            if vault_builder:
+                await vault_builder.build_full()
+            if content_learner:
+                await content_learner.learn()
+            if knowledge_synthesizer:
+                await knowledge_synthesizer.synthesize()
+            if vault_indexer_instance:
+                await vault_indexer_instance.index_vault()
+            logger.info("Daily rebuild complete")
+        except Exception as e:
+            logger.error(f"Daily rebuild failed: {e}")
+        finally:
+            _rebuild_in_progress = False
+
+    rebuild_scheduler = AsyncIOScheduler()
+    rebuild_scheduler.add_job(_daily_rebuild, CronTrigger(hour=3, minute=0))
+    rebuild_scheduler.start()
+    logger.info("Daily rebuild scheduler started (3:00 AM)")
 
     logger.info("RAG service initialized successfully")
 
@@ -2159,6 +2207,21 @@ async def knowledge_reindex(force: bool = False):
         raise HTTPException(status_code=503, detail="Knowledge vault not configured")
 
     result = await vault_indexer_instance.index_vault(force=force)
+    return {"status": "completed", **result}
+
+
+@app.post("/knowledge/synthesize")
+async def knowledge_synthesize_endpoint(force: bool = False):
+    """Trigger knowledge synthesis (generate/update recommendation notes)."""
+    if not knowledge_synthesizer:
+        raise HTTPException(status_code=503, detail="Knowledge synthesizer not configured")
+
+    result = await knowledge_synthesizer.synthesize(force=force)
+
+    # Auto-reindex after synthesis
+    if vault_indexer_instance and result.get("notes_generated", 0) > 0:
+        asyncio.create_task(vault_indexer_instance.index_vault())
+
     return {"status": "completed", **result}
 
 

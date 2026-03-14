@@ -1,0 +1,172 @@
+vault_path: ./knowledge-vault
+
+# ── Competitor stores (product extraction + price tracking) ──
+competitors:
+  - url: https://airsoftquimera.com
+    name: Airsoft Quimera
+    slug: airsoftquimera-com
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.0
+    url_include_patterns: []
+
+  - url: https://www.hobbyexpert.es
+    name: Hobby Expert
+    slug: hobbyexpert-es
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.5
+    url_include_patterns: []
+    use_firecrawl: true  # Cloudflare-managed challenge — needs headless browser
+
+  - url: https://vsgun.com
+    name: VSGUN
+    slug: vsgun-com
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.5
+    url_include_patterns: []
+
+  - url: https://airsoftyecla.es
+    name: Airsoft Yecla
+    slug: airsoftyecla-es
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.5
+    url_include_patterns: []
+
+  - url: https://zulutactical.es
+    name: Zulu Tactical
+    slug: zulutactical-es
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.5
+    url_include_patterns: []
+
+  - url: https://airsoftestartit.com
+    name: Airsoft Estartit
+    slug: airsoftestartit-com
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.5
+    url_include_patterns: []
+    use_firecrawl: true  # Cloudflare-managed challenge
+
+  - url: https://airsoftnation.store
+    name: Airsoft Nation Store
+    slug: airsoftnation-store
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.5
+    url_include_patterns: []
+
+  - url: https://www.weapon762.com
+    name: Weapon762
+    slug: weapon762-com
+    max_pages: 500
+    max_depth: 3
+    crawl_delay: 1.5
+    url_include_patterns: []
+
+# ── Content sources (knowledge learning — summarize, extract entities, link) ──
+# Types: reddit, forum, blog, guide, news, youtube
+# The system crawls these, summarizes content with LLM, extracts brands/products/topics,
+# and generates interlinked Obsidian notes that grow the knowledge graph.
+sources:
+  # Reddit — airsoft communities
+  - url: https://www.reddit.com/r/airsoft/
+    name: r/airsoft
+    slug: reddit-airsoft
+    type: reddit
+    max_pages: 100
+    max_depth: 2
+    crawl_delay: 2.0
+    focus_topics: ["spain", "europe", "tokyo marui", "vfc", "g&g", "beginner", "aeg", "gbb", "upgrade"]
+
+  - url: https://www.reddit.com/r/airsoft/wiki/
+    name: r/airsoft Wiki & Guides
+    slug: reddit-airsoft-wiki
+    type: guide
+    max_pages: 50
+    max_depth: 3
+    crawl_delay: 2.0
+    focus_topics: ["beginner guide", "buying guide", "upgrade guide", "maintenance"]
+
+  # Spanish airsoft forums and communities
+  - url: https://www.airsoftzone.es
+    name: Airsoft Zone Spain
+    slug: airsoftzone-es
+    type: forum
+    max_pages: 200
+    max_depth: 3
+    crawl_delay: 1.5
+    focus_topics: ["review", "opinion", "tienda", "marca", "replica"]
+
+  # Airsoft blogs and review sites
+  - url: https://www.popularairsoft.com
+    name: Popular Airsoft
+    slug: popularairsoft
+    type: blog
+    max_pages: 150
+    max_depth: 2
+    crawl_delay: 1.5
+    focus_topics: ["review", "new release", "brand", "comparison", "guide"]
+
+  - url: https://www.airsoftgi.com/articles/
+    name: Airsoft GI Articles
+    slug: airsoftgi-articles
+    type: guide
+    max_pages: 100
+    max_depth: 2
+    crawl_delay: 1.5
+    focus_topics: ["guide", "comparison", "review", "how to"]
+
+  # Brand manufacturer sites (for product intelligence)
+  - url: https://www.tokyo-marui.co.jp/products/
+    name: Tokyo Marui Official
+    slug: tokyo-marui-official
+    type: brand_site
+    max_pages: 200
+    max_depth: 2
+    crawl_delay: 2.0
+    focus_topics: ["new product", "lineup", "series"]
+
+  - url: https://www.vegaforce.com
+    name: VFC Official
+    slug: vfc-official
+    type: brand_site
+    max_pages: 150
+    max_depth: 2
+    crawl_delay: 2.0
+    focus_topics: ["new product", "gbb", "aeg"]
+
+# ── Messaging integrations (future — WhatsApp & Telegram) ──
+# These will ingest group messages, summarize discussions, and link to vault notes.
+messaging:
+  enabled: false  # Enable when integrations are ready
+  platforms:
+    - type: whatsapp
+      name: Skirmshop WhatsApp Group
+      slug: whatsapp-skirmshop
+      enabled: false
+      # webhook_url: ""  # Set when OpenClaw integration is configured
+      # group_id: ""
+
+    - type: telegram
+      name: Airsoft Spain Telegram
+      slug: telegram-airsoft-spain
+      enabled: false
+      # bot_token: ""
+      # chat_id: ""
+
+    - type: telegram
+      name: Skirmshop Telegram
+      slug: telegram-skirmshop
+      enabled: false
+
+schedule:
+  rebuild_cron: "0 3 * * *"   # Daily 3 AM — full chained rebuild (competitors → content → synthesis → reindex)
+  # Sources are crawled incrementally — only new/changed content is processed
+
+health:
+  max_age_days: 2              # Warn if last build older than 2 days (daily now)
