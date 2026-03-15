@@ -41,6 +41,13 @@ from vault_indexer import VaultIndexer
 from content_learner import ContentLearner
 from knowledge_synthesizer import KnowledgeSynthesizer
 from activity_logger import init_activity_logger, log_activity, read_timeline
+from metrics import (
+    PrometheusMiddleware, metrics_response,
+    VAULT_NOTES_TOTAL, VAULT_RECOMMENDATION_NOTES, QDRANT_COLLECTION_POINTS,
+    SYNTHESIS_RUNS, SYNTHESIS_NOTES_GENERATED, SYNTHESIS_LLM_CALLS, SYNTHESIS_DURATION,
+    REBUILD_RUNS, REBUILD_DURATION, REBUILD_COMPETITORS_CRAWLED, REBUILD_PRODUCTS_EXTRACTED,
+    SEARCH_COUNT, SEARCH_LATENCY,
+)
 from deep_analyzer import DeepAnalyzer
 from firecrawl_client import FirecrawlClient
 from research_agent import ResearchAgent
@@ -331,6 +338,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(PrometheusMiddleware)
 
 # Serve embedded dashboard
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -540,6 +548,27 @@ async def health():
             "product_indexer": product_indexer is not None,
         },
     }
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus metrics endpoint."""
+    # Update gauge metrics on each scrape
+    try:
+        if vault_indexer_instance:
+            info = vault_indexer_instance.get_collection_info()
+            if info:
+                VAULT_NOTES_TOTAL.set(info.get("points_count", 0))
+        if product_indexer:
+            for col in product_indexer.client.get_collections().collections:
+                try:
+                    col_info = product_indexer.client.get_collection(col.name)
+                    QDRANT_COLLECTION_POINTS.labels(collection=col.name).set(col_info.points_count)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return metrics_response()
 
 
 @app.post("/chat")
@@ -1346,6 +1375,8 @@ async def catalog_search(request: CatalogSearchRequest):
 
     Auto-extracts category/brand from query when not explicitly provided.
     """
+    import time as _time
+    _search_start = _time.time()
     types = request.types or ["product", "collection", "page"]
     results_by_type: dict[str, list] = {}
 
@@ -1405,6 +1436,8 @@ async def catalog_search(request: CatalogSearchRequest):
     # Final sort by score for presentation
     all_results.sort(key=lambda r: r.get("score", 0), reverse=True)
 
+    SEARCH_COUNT.labels(search_type="catalog").inc()
+    SEARCH_LATENCY.labels(search_type="catalog").observe(_time.time() - _search_start)
     return {"results": all_results, "query": request.query, "types": types}
 
 
@@ -2221,7 +2254,13 @@ async def knowledge_synthesize_endpoint(force: bool = False):
     if not knowledge_synthesizer:
         raise HTTPException(status_code=503, detail="Knowledge synthesizer not configured")
 
+    import time as _time
+    _synth_start = _time.time()
     result = await knowledge_synthesizer.synthesize(force=force)
+    SYNTHESIS_DURATION.observe(_time.time() - _synth_start)
+    SYNTHESIS_RUNS.labels(status="success" if result.get("notes_failed", 0) == 0 else "partial").inc()
+    SYNTHESIS_NOTES_GENERATED.inc(result.get("notes_generated", 0))
+    SYNTHESIS_LLM_CALLS.inc(result.get("llm_calls", 0))
 
     # Auto-reindex after synthesis
     if vault_indexer_instance and result.get("notes_generated", 0) > 0:
