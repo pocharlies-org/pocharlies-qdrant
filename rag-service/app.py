@@ -40,6 +40,7 @@ from vault_builder import VaultBuilder
 from vault_indexer import VaultIndexer
 from content_learner import ContentLearner
 from knowledge_synthesizer import KnowledgeSynthesizer
+from activity_logger import init_activity_logger, log_activity, read_timeline
 from deep_analyzer import DeepAnalyzer
 from firecrawl_client import FirecrawlClient
 from research_agent import ResearchAgent
@@ -230,6 +231,8 @@ async def lifespan(app: FastAPI):
     if not os.path.exists(config_path):
         config_path = os.path.join(os.path.dirname(__file__), "..", "vault_config.yaml")
 
+    init_activity_logger(vault_path)
+
     try:
         vault_builder = VaultBuilder(
             vault_path=vault_path,
@@ -286,6 +289,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Daily rebuild skipped — already in progress")
             return
         _rebuild_in_progress = True
+        log_activity("rebuild_start", "Daily rebuild started")
         logger.info("Daily rebuild started")
         try:
             if vault_builder:
@@ -296,6 +300,7 @@ async def lifespan(app: FastAPI):
                 await knowledge_synthesizer.synthesize()
             if vault_indexer_instance:
                 await vault_indexer_instance.index_vault()
+            log_activity("rebuild_complete", "Daily rebuild complete")
             logger.info("Daily rebuild complete")
         except Exception as e:
             logger.error(f"Daily rebuild failed: {e}")
@@ -2223,6 +2228,38 @@ async def knowledge_synthesize_endpoint(force: bool = False):
         asyncio.create_task(vault_indexer_instance.index_vault())
 
     return {"status": "completed", **result}
+
+
+@app.get("/dashboard/api/timeline")
+async def dashboard_timeline(hours: int = 24, limit: int = 100):
+    """Get recent activity events for the dashboard."""
+    return read_timeline(hours=hours, limit=limit)
+
+
+@app.get("/dashboard/api/collections")
+async def dashboard_collections():
+    """Get Qdrant collection stats for the dashboard."""
+    try:
+        collections_response = product_indexer.client.get_collections()
+        result = []
+        for col in collections_response.collections:
+            try:
+                info = product_indexer.client.get_collection(col.name)
+                result.append({
+                    "name": col.name,
+                    "points_count": info.points_count,
+                    "vectors_count": getattr(info, "vectors_count", info.points_count),
+                    "status": info.status.value if info.status else "unknown",
+                })
+            except Exception:
+                result.append({"name": col.name, "points_count": 0, "status": "error"})
+        return {"collections": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Dashboard SPA — must be after /dashboard/api/* routes
+app.mount("/dashboard", StaticFiles(directory="static/dashboard", html=True), name="dashboard")
 
 
 @app.post("/knowledge/learn")
