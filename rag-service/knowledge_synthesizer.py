@@ -18,6 +18,8 @@ from typing import Dict, List, Optional, Set
 
 import jinja2
 
+from activity_logger import log_activity
+
 logger = logging.getLogger(__name__)
 
 # ── Platform Registry (V1: Sniper + GBB) ────────────────────────────
@@ -393,6 +395,10 @@ RULES:
 
         note_path.write_text(rendered)
         logger.info(f"Wrote recommendation: {note_path.relative_to(self.vault_path)}")
+        log_activity("synthesis_note", f"Wrote: {note_path.relative_to(self.vault_path)}", {
+            "path": str(note_path.relative_to(self.vault_path)),
+            "template": template_name,
+        })
 
     # ── Content Hash (skip unchanged) ────────────────────────────
 
@@ -427,6 +433,7 @@ RULES:
             "handles_validated": 0,
             "platforms": {},
         }
+        log_activity("synthesis_start", f"Synthesis started (force={force})")
 
         # 1. Generate platform x goal notes
         for platform_slug, platform_info in PLATFORMS.items():
@@ -566,5 +573,6 @@ RULES:
         stats["last_run"] = datetime.now(timezone.utc).isoformat()
         meta_path.write_text(json.dumps(stats, indent=2))
 
+        log_activity("synthesis_complete", f"{stats['notes_generated']} notes generated, {stats['notes_failed']} failed", stats)
         logger.info(f"Synthesis complete: {stats}")
         return stats
