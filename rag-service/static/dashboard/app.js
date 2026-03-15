@@ -27,9 +27,9 @@ async function loadStats() {
         const lastEvent = timeline.events?.[0];
         const cards = [
             { label: 'Vectors (brain)', value: qdrant.points_count || 0 },
-            { label: 'Vault Notes', value: status.notes_count || 0 },
+            { label: 'Vault Notes', value: status.note_count || status.notes_count || 0 },
             { label: 'Last Activity', value: lastEvent ? new Date(lastEvent.ts).toLocaleTimeString() : 'N/A' },
-            { label: 'Health', value: status.health?.status || 'unknown' },
+            { label: 'Health', value: status.status || status.health?.status || 'unknown' },
         ];
         document.getElementById('stats-cards').innerHTML = cards.map(c =>
             `<div class="stat-card"><div class="stat-value">${c.value}</div><div class="stat-label">${c.label}</div></div>`
