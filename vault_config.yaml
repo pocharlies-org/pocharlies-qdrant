@@ -5,68 +5,74 @@ competitors:
   - url: https://airsoftquimera.com
     name: Airsoft Quimera
     slug: airsoftquimera-com
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.0
     url_include_patterns: []
+    use_firecrawl: true
 
   - url: https://www.hobbyexpert.es
     name: Hobby Expert
     slug: hobbyexpert-es
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.5
     url_include_patterns: []
-    use_firecrawl: true  # Cloudflare-managed challenge — needs headless browser
+    use_firecrawl: true
 
   - url: https://vsgun.com
     name: VSGUN
     slug: vsgun-com
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.5
     url_include_patterns: []
+    use_firecrawl: true
 
   - url: https://airsoftyecla.es
     name: Airsoft Yecla
     slug: airsoftyecla-es
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.5
     url_include_patterns: []
+    use_firecrawl: true
 
   - url: https://zulutactical.es
     name: Zulu Tactical
     slug: zulutactical-es
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.5
     url_include_patterns: []
+    use_firecrawl: true
 
   - url: https://airsoftestartit.com
     name: Airsoft Estartit
     slug: airsoftestartit-com
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.5
     url_include_patterns: []
-    use_firecrawl: true  # Cloudflare-managed challenge
+    use_firecrawl: true
 
   - url: https://airsoftnation.store
     name: Airsoft Nation Store
     slug: airsoftnation-store
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.5
     url_include_patterns: []
+    use_firecrawl: true
 
   - url: https://www.weapon762.com
     name: Weapon762
     slug: weapon762-com
-    max_pages: 500
-    max_depth: 3
+    max_pages: 10000
+    max_depth: 10
     crawl_delay: 1.5
     url_include_patterns: []
+    use_firecrawl: true
 
 # ── Content sources (knowledge learning — summarize, extract entities, link) ──
 # Types: reddit, forum, blog, guide, news, youtube
