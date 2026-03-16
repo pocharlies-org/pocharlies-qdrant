@@ -2522,6 +2522,10 @@ async def _reindex_vault():
 async def compatibility_stats():
     """Show compatibility data coverage statistics."""
     from qdrant_client.http.models import IsEmptyCondition
+    from metrics import (
+        COMPAT_PRODUCTS_TOTAL, COMPAT_WITH_PLATFORMS, COMPAT_WITH_TYPE,
+        COMPAT_BASE_PLATFORMS, COMPAT_COVERAGE_PCT,
+    )
 
     total = product_indexer.client.count(
         collection_name=product_indexer.COLLECTION_NAME,
@@ -2548,12 +2552,21 @@ async def compatibility_stats():
         ]),
     ).count
 
+    coverage = round(with_compat / total * 100, 1) if total else 0
+
+    # Update Prometheus gauges
+    COMPAT_PRODUCTS_TOTAL.set(total)
+    COMPAT_WITH_PLATFORMS.set(with_compat)
+    COMPAT_WITH_TYPE.set(with_type)
+    COMPAT_BASE_PLATFORMS.set(base_platforms)
+    COMPAT_COVERAGE_PCT.set(coverage)
+
     return {
         "total_products": total,
         "with_compatible_platforms": with_compat,
         "with_upgrade_type": with_type,
         "base_platforms": base_platforms,
-        "coverage_pct": round(with_compat / total * 100, 1) if total else 0,
+        "coverage_pct": coverage,
     }
 
 
@@ -2597,6 +2610,35 @@ async def analyze_all_compatibility():
 
     from qdrant_client.http.models import IsEmptyCondition
 
+    async def _update_compat_metrics():
+        """Refresh compatibility Prometheus gauges."""
+        try:
+            from qdrant_client.http.models import IsEmptyCondition as _IE
+            from metrics import (
+                COMPAT_PRODUCTS_TOTAL, COMPAT_WITH_PLATFORMS, COMPAT_WITH_TYPE,
+                COMPAT_BASE_PLATFORMS, COMPAT_COVERAGE_PCT,
+            )
+            total = product_indexer.client.count(collection_name=product_indexer.COLLECTION_NAME).count
+            with_compat = product_indexer.client.count(
+                collection_name=product_indexer.COLLECTION_NAME,
+                count_filter=Filter(must_not=[_IE(is_empty={"key": "compatible_platforms"})]),
+            ).count
+            with_type = product_indexer.client.count(
+                collection_name=product_indexer.COLLECTION_NAME,
+                count_filter=Filter(must_not=[_IE(is_empty={"key": "upgrade_type"})]),
+            ).count
+            base = product_indexer.client.count(
+                collection_name=product_indexer.COLLECTION_NAME,
+                count_filter=Filter(must=[FieldCondition(key="is_base_platform", match=MatchValue(value=True))]),
+            ).count
+            COMPAT_PRODUCTS_TOTAL.set(total)
+            COMPAT_WITH_PLATFORMS.set(with_compat)
+            COMPAT_WITH_TYPE.set(with_type)
+            COMPAT_BASE_PLATFORMS.set(base)
+            COMPAT_COVERAGE_PCT.set(round(with_compat / total * 100, 1) if total else 0)
+        except Exception as e:
+            logger.warning(f"Failed to update compat metrics: {e}")
+
     async def _run_batch():
         logger.info("Starting batch compatibility analysis...")
         offset = None
@@ -2633,6 +2675,7 @@ async def analyze_all_compatibility():
                     analyzed += 1
                     if analyzed % 100 == 0:
                         logger.info(f"Compatibility batch: {analyzed} done, {skipped} skipped, {errors} errors")
+                        await _update_compat_metrics()
                 except Exception as e:
                     logger.error(f"Failed to analyze {shopify_id}: {e}")
                     errors += 1
@@ -2641,6 +2684,7 @@ async def analyze_all_compatibility():
                 break
 
         logger.info(f"Batch compatibility complete: {analyzed} analyzed, {skipped} skipped, {errors} errors")
+        await _update_compat_metrics()
 
     asyncio.create_task(_run_batch())
 

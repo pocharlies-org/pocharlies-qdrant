@@ -114,6 +114,38 @@ CRAWL_DURATION = Histogram(
     buckets=[60, 300, 600, 1200, 1800, 3600],
 )
 
+# ── Compatibility metrics ──────────────────────────────────
+COMPAT_PRODUCTS_TOTAL = Gauge(
+    "rag_compatibility_products_total",
+    "Total products in catalog",
+    multiprocess_mode="liveall",
+)
+COMPAT_WITH_PLATFORMS = Gauge(
+    "rag_compatibility_with_platforms",
+    "Products with compatible_platforms metadata",
+    multiprocess_mode="liveall",
+)
+COMPAT_WITH_TYPE = Gauge(
+    "rag_compatibility_with_type",
+    "Products with upgrade_type metadata",
+    multiprocess_mode="liveall",
+)
+COMPAT_BASE_PLATFORMS = Gauge(
+    "rag_compatibility_base_platforms",
+    "Products identified as base platforms (guns)",
+    multiprocess_mode="liveall",
+)
+COMPAT_COVERAGE_PCT = Gauge(
+    "rag_compatibility_coverage_pct",
+    "Percentage of products with compatibility data",
+    multiprocess_mode="liveall",
+)
+COMPAT_ANALYSIS_TOTAL = Counter(
+    "rag_compatibility_analysis_total",
+    "Total products analyzed for compatibility",
+    ["method"],  # keyword, llm, webhook
+)
+
 # ── Build info ───────────────────────────────────────────
 BUILD_INFO = Info("rag_build", "RAG service build information")
 BUILD_INFO.info({"version": "2.0.0", "service": "pocharlies-rag"})
