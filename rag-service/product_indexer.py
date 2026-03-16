@@ -112,6 +112,21 @@ class ProductIndexer:
         )
         logger.info(f"Created hybrid collection: {self.COLLECTION_NAME}")
 
+        # Compatibility filter indexes (idempotent — safe to call if index exists)
+        for field_name, schema in [
+            ("compatible_platforms", "keyword"),
+            ("upgrade_type", "keyword"),
+            ("is_base_platform", "bool"),
+        ]:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.COLLECTION_NAME,
+                    field_name=field_name,
+                    field_schema=schema,
+                )
+            except Exception:
+                pass  # Index may already exist
+
     @staticmethod
     def _generate_id(shopify_id: int, chunk_idx: int) -> int:
         key = f"product:{shopify_id}:{chunk_idx}"
@@ -352,6 +367,9 @@ class ProductIndexer:
         category_filter: Optional[str] = None,
         min_price: Optional[float] = None,
         max_price: Optional[float] = None,
+        compatible_with: Optional[str] = None,
+        upgrade_type: Optional[str] = None,
+        exclude_base_platforms: bool = False,
     ) -> List[Dict]:
         """Hybrid search on product_catalog with structured filters."""
         from sparse_encoder import encode_sparse_query
@@ -387,6 +405,20 @@ class ProductIndexer:
                     FieldCondition(key="price", range=Range(**range_params))
                 )
 
+            # Compatibility filters
+            if compatible_with:
+                conditions.append(
+                    FieldCondition(key="compatible_platforms", match=MatchValue(value=compatible_with))
+                )
+            if upgrade_type:
+                conditions.append(
+                    FieldCondition(key="upgrade_type", match=MatchValue(value=upgrade_type))
+                )
+            if exclude_base_platforms:
+                conditions.append(
+                    FieldCondition(key="is_base_platform", match=MatchValue(value=False))
+                )
+
             search_filter = Filter(must=conditions) if conditions else None
 
             results = self.client.query_points(
@@ -416,6 +448,9 @@ class ProductIndexer:
                     "status": r.payload.get("status", ""),
                     "score": round(r.score, 4),
                     "source_type": "product",
+                    "compatible_platforms": r.payload.get("compatible_platforms", []),
+                    "upgrade_type": r.payload.get("upgrade_type"),
+                    "is_base_platform": r.payload.get("is_base_platform", False),
                 }
                 for r in results.points
             ]
@@ -423,6 +458,42 @@ class ProductIndexer:
         except Exception as e:
             logger.error(f"Product search error: {e}")
             return []
+
+    # ── Compatibility updates ─────────────────────────────────────
+
+    def update_compatibility(self, shopify_id, payload: dict) -> bool:
+        """Update compatibility fields on existing product points by shopify_id."""
+        try:
+            # shopify_id may be int or str — try int first (Qdrant stores as int)
+            try:
+                sid = int(shopify_id)
+            except (ValueError, TypeError):
+                sid = shopify_id
+
+            results = self.client.scroll(
+                collection_name=self.COLLECTION_NAME,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="shopify_id", match=MatchValue(value=sid))
+                ]),
+                limit=10,
+                with_payload=False,
+            )
+            points = results[0]
+            if not points:
+                logger.warning(f"No points found for shopify_id={shopify_id}")
+                return False
+
+            point_ids = [p.id for p in points]
+            self.client.set_payload(
+                collection_name=self.COLLECTION_NAME,
+                payload=payload,
+                points=point_ids,
+            )
+            logger.info(f"Updated compatibility for {len(point_ids)} points (shopify_id={shopify_id})")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update compatibility for shopify_id={shopify_id}: {e}")
+            return False
 
     # ── Stats ─────────────────────────────────────────────────────
 

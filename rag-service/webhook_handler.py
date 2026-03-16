@@ -16,13 +16,15 @@ class ShopifyWebhookHandler:
     """Handles incoming Shopify webhooks with HMAC verification."""
 
     def __init__(self, webhook_secret: str, shopify_graphql, product_indexer,
-                 catalog_indexer, shopify_client, content_hash_store=None):
+                 catalog_indexer, shopify_client, content_hash_store=None,
+                 compatibility_analyzer=None):
         self.webhook_secret = webhook_secret
         self.graphql = shopify_graphql
         self.product_indexer = product_indexer
         self.catalog_indexer = catalog_indexer
         self.shopify_client = shopify_client
         self.content_hash_store = content_hash_store
+        self.compatibility_analyzer = compatibility_analyzer
 
     def verify_hmac(self, raw_body: bytes, hmac_header: str) -> bool:
         """Verify Shopify HMAC-SHA256 signature."""
@@ -81,6 +83,21 @@ class ShopifyWebhookHandler:
                 points=points,
             )
         logger.info(f"Webhook: synced product {shopify_gid}")
+
+        # Compatibility analysis (async, non-blocking for the upsert itself)
+        if self.compatibility_analyzer:
+            try:
+                compat_result = await self.compatibility_analyzer.analyze_product(product_data)
+                self.product_indexer.update_compatibility(
+                    shopify_id=str(product_data.get("id", "")),
+                    payload=compat_result.to_payload(),
+                )
+                logger.info(
+                    f"Compatibility updated for {product_data.get('title', '?')}: "
+                    f"platforms={compat_result.compatible_platforms}, type={compat_result.upgrade_type}"
+                )
+            except Exception as e:
+                logger.error(f"Compatibility analysis failed for webhook product: {e}")
 
     async def _handle_product_delete(self, shopify_gid: Optional[str], body: Dict) -> None:
         """Delete product from Qdrant."""

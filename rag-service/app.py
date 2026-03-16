@@ -35,6 +35,8 @@ from shopify_graphql import ShopifyGraphQL
 from catalog_indexer import CatalogIndexer
 from sync_state import SyncStateStore, ContentHashStore
 from webhook_handler import ShopifyWebhookHandler
+from compatibility_analyzer import CompatibilityAnalyzer
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 from reranker import get_reranker, init_reranker
 from vault_builder import VaultBuilder
 from vault_indexer import VaultIndexer
@@ -90,6 +92,7 @@ vault_builder: VaultBuilder = None
 vault_indexer_instance: VaultIndexer = None
 content_learner: ContentLearner = None
 knowledge_synthesizer: KnowledgeSynthesizer = None
+compatibility_analyzer: CompatibilityAnalyzer = None
 
 # Active crawl jobs + queue
 crawl_jobs: Dict[str, CrawlJob] = {}
@@ -229,7 +232,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Reranker load failed (search will work without reranking): {e}")
 
     # Knowledge Vault (Obsidian brain)
-    global vault_builder, vault_indexer_instance, content_learner, knowledge_synthesizer
+    global vault_builder, vault_indexer_instance, content_learner, knowledge_synthesizer, compatibility_analyzer
     vault_path = os.getenv("VAULT_PATH", "/app/knowledge-vault")
     config_path = os.getenv("VAULT_CONFIG", "/app/vault_config.yaml")
     # Fallback to local paths for dev
@@ -279,6 +282,19 @@ async def lifespan(app: FastAPI):
             redis_client=redis_client,
         )
         logger.info("Knowledge synthesizer initialized")
+
+        # Compatibility Analyzer (needs catalog_indexer + vault_indexer)
+        compatibility_analyzer = CompatibilityAnalyzer(
+            llm_client=llm_client,
+            llm_model=LLM_MODEL,
+            catalog_searcher=lambda query, top_k: catalog_indexer.search_pages(query=query, top_k=top_k),
+            vault_searcher=lambda query, top_k: vault_indexer_instance.search_recommendations(query=query, top_k=top_k) if vault_indexer_instance else [],
+        )
+        logger.info("Compatibility analyzer initialized")
+
+        # Wire compatibility analyzer into webhook handler (initialized earlier)
+        if webhook_handler:
+            webhook_handler.compatibility_analyzer = compatibility_analyzer
 
     except Exception as e:
         logger.warning(f"Knowledge vault init failed: {e}")
@@ -398,6 +414,10 @@ class ProductSearchRequest(BaseModel):
     min_price: Optional[float] = None
     max_price: Optional[float] = None
     rerank: bool = True
+    # Compatibility filters
+    compatible_with: Optional[str] = None
+    upgrade_type: Optional[str] = None
+    exclude_base_platforms: bool = False
 
 
 class CompetitorCrawlRequest(BaseModel):
@@ -1152,6 +1172,9 @@ async def product_search(request: ProductSearchRequest):
         category_filter=request.category,
         min_price=request.min_price,
         max_price=request.max_price,
+        compatible_with=request.compatible_with,
+        upgrade_type=request.upgrade_type,
+        exclude_base_platforms=request.exclude_base_platforms,
     )
 
     if reranker and request.rerank and results:
@@ -1183,6 +1206,10 @@ class CatalogSearchRequest(BaseModel):
     top_k: int = 10
     brand: Optional[str] = None
     category: Optional[str] = None
+    # Compatibility filters
+    compatible_with: Optional[str] = None
+    upgrade_type: Optional[str] = None
+    exclude_base_platforms: bool = False
 
 
 class FullSyncRequest(BaseModel):
@@ -1396,6 +1423,9 @@ async def catalog_search(request: CatalogSearchRequest):
             top_k=effective_top_k,
             brand_filter=effective_brand,
             category_filter=effective_category,
+            compatible_with=request.compatible_with,
+            upgrade_type=request.upgrade_type,
+            exclude_base_platforms=request.exclude_base_platforms,
         )
         if reranker and products:
             products = reranker.rerank(request.query, products, top_k=request.top_k)
@@ -2483,3 +2513,135 @@ async def _reindex_vault():
         logger.info(f"Auto-reindex after build: {result}")
     except Exception as e:
         logger.error(f"Auto-reindex failed: {e}")
+
+
+# ── Compatibility Admin Endpoints ──────────────────────────────
+
+
+@app.get("/admin/compatibility/stats")
+async def compatibility_stats():
+    """Show compatibility data coverage statistics."""
+    from qdrant_client.http.models import IsEmptyCondition
+
+    total = product_indexer.client.count(
+        collection_name=product_indexer.COLLECTION_NAME,
+    ).count
+
+    with_compat = product_indexer.client.count(
+        collection_name=product_indexer.COLLECTION_NAME,
+        count_filter=Filter(must_not=[
+            IsEmptyCondition(is_empty={"key": "compatible_platforms"})
+        ]),
+    ).count
+
+    with_type = product_indexer.client.count(
+        collection_name=product_indexer.COLLECTION_NAME,
+        count_filter=Filter(must_not=[
+            IsEmptyCondition(is_empty={"key": "upgrade_type"})
+        ]),
+    ).count
+
+    base_platforms = product_indexer.client.count(
+        collection_name=product_indexer.COLLECTION_NAME,
+        count_filter=Filter(must=[
+            FieldCondition(key="is_base_platform", match=MatchValue(value=True))
+        ]),
+    ).count
+
+    return {
+        "total_products": total,
+        "with_compatible_platforms": with_compat,
+        "with_upgrade_type": with_type,
+        "base_platforms": base_platforms,
+        "coverage_pct": round(with_compat / total * 100, 1) if total else 0,
+    }
+
+
+@app.post("/admin/compatibility/analyze-product/{shopify_id}")
+async def analyze_product_compatibility(shopify_id: str):
+    """Analyze a single product's compatibility."""
+    if not compatibility_analyzer:
+        raise HTTPException(status_code=500, detail="Compatibility analyzer not initialized")
+
+    results = product_indexer.client.scroll(
+        collection_name=product_indexer.COLLECTION_NAME,
+        scroll_filter=Filter(must=[
+            FieldCondition(key="shopify_id", match=MatchValue(value=shopify_id))
+        ]),
+        limit=1,
+        with_payload=True,
+    )
+    points = results[0]
+    if not points:
+        raise HTTPException(status_code=404, detail=f"Product {shopify_id} not found")
+
+    product = points[0].payload
+    result = await compatibility_analyzer.analyze_product(product)
+
+    product_indexer.update_compatibility(shopify_id, result.to_payload())
+
+    return {
+        "shopify_id": shopify_id,
+        "title": product.get("title"),
+        **result.to_payload(),
+        "confidence": result.confidence,
+        "reasoning": result.reasoning,
+    }
+
+
+@app.post("/admin/compatibility/analyze-all")
+async def analyze_all_compatibility():
+    """Run batch compatibility analysis on products missing data. Runs in background."""
+    if not compatibility_analyzer:
+        raise HTTPException(status_code=500, detail="Compatibility analyzer not initialized")
+
+    from qdrant_client.http.models import IsEmptyCondition
+
+    async def _run_batch():
+        logger.info("Starting batch compatibility analysis...")
+        offset = None
+        analyzed = 0
+        skipped = 0
+        errors = 0
+
+        while True:
+            # Only process products MISSING compatibility data
+            results, offset = product_indexer.client.scroll(
+                collection_name=product_indexer.COLLECTION_NAME,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="source_type", match=MatchValue(value="product")),
+                    IsEmptyCondition(is_empty={"key": "compatible_platforms"}),
+                ]),
+                limit=50,
+                offset=offset,
+                with_payload=True,
+            )
+
+            if not results:
+                break
+
+            for point in results:
+                product = point.payload
+                shopify_id = product.get("shopify_id")
+                if not shopify_id:
+                    skipped += 1
+                    continue
+
+                try:
+                    result = await compatibility_analyzer.analyze_product(product)
+                    product_indexer.update_compatibility(str(shopify_id), result.to_payload())
+                    analyzed += 1
+                    if analyzed % 100 == 0:
+                        logger.info(f"Compatibility batch: {analyzed} done, {skipped} skipped, {errors} errors")
+                except Exception as e:
+                    logger.error(f"Failed to analyze {shopify_id}: {e}")
+                    errors += 1
+
+            if offset is None:
+                break
+
+        logger.info(f"Batch compatibility complete: {analyzed} analyzed, {skipped} skipped, {errors} errors")
+
+    asyncio.create_task(_run_batch())
+
+    return {"status": "started", "message": "Batch analysis running in background. Check /admin/compatibility/stats for progress."}
