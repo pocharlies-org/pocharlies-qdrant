@@ -1,6 +1,17 @@
 """Prometheus metrics for RAG service — knowledge brain monitoring."""
 
-from prometheus_client import Counter, Gauge, Histogram, Info, generate_latest, CONTENT_TYPE_LATEST
+import os
+import tempfile
+
+# Set up multiprocess mode BEFORE importing prometheus_client
+# This allows metrics to be shared across uvicorn workers
+if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
+    prom_dir = os.path.join(tempfile.gettempdir(), "prometheus_multiproc")
+    os.makedirs(prom_dir, exist_ok=True)
+    os.environ["PROMETHEUS_MULTIPROC_DIR"] = prom_dir
+
+from prometheus_client import Counter, Gauge, Histogram, Info, CONTENT_TYPE_LATEST
+from prometheus_client import multiprocess, CollectorRegistry, generate_latest
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -23,15 +34,18 @@ REQUEST_LATENCY = Histogram(
 VAULT_NOTES_TOTAL = Gauge(
     "rag_vault_notes_total",
     "Total notes in the knowledge vault",
+    multiprocess_mode="liveall",
 )
 VAULT_RECOMMENDATION_NOTES = Gauge(
     "rag_vault_recommendation_notes",
     "Total recommendation notes generated",
+    multiprocess_mode="liveall",
 )
 QDRANT_COLLECTION_POINTS = Gauge(
     "rag_qdrant_collection_points",
     "Points count per Qdrant collection",
     ["collection"],
+    multiprocess_mode="liveall",
 )
 
 # ── Synthesis metrics ────────────────────────────────────
@@ -134,8 +148,10 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
 
 def metrics_response():
-    """Generate Prometheus metrics response."""
+    """Generate Prometheus metrics response (multiprocess-safe)."""
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
     return Response(
-        content=generate_latest(),
+        content=generate_latest(registry),
         media_type=CONTENT_TYPE_LATEST,
     )
