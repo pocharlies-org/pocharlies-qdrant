@@ -5,8 +5,8 @@ services:
     container_name: pocharlies-qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -76,7 +76,7 @@ services:
       retries: 5
       start_period: 30s
 
-  # MCP Server (SSE mode for agent-service connection)
+  # MCP Server (SSE mode)
   mcp-server:
     build:
       context: ./mcp-server
@@ -88,6 +88,10 @@ services:
       - QDRANT_API_KEY=${QDRANT_API_KEY}
       - POCHARLIES_RAG_URL=http://pocharlies-rag:5000
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-base-en-v1.5}
+      - OLLAMA_URL=http://172.18.0.1:11434
+      - OLLAMA_EMBED_MODEL=nomic-embed-text
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
     networks:
@@ -98,7 +102,7 @@ services:
       rag-service:
         condition: service_healthy
 
-  # Picqer WMS MCP Server (SSE mode for agent-service connection)
+  # Picqer WMS MCP Server (SSE mode)
   picqer-mcp:
     build:
       context: ./mcp-server
@@ -112,55 +116,6 @@ services:
       - skirmshop-network
     ports:
       - "127.0.0.1:8003:8001"
-
-  # PostgreSQL for agent state, tasks, schedules
-  postgres:
-    image: postgres:16-alpine
-    container_name: pocharlies-postgres
-    restart: unless-stopped
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: langgraph
-      POSTGRES_USER: agent
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent-secret}
-    networks:
-      - skirmshop-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agent -d langgraph"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # LangGraph Agent Orchestrator
-  agent-service:
-    build:
-      context: ./agent-service
-      dockerfile: Dockerfile
-    container_name: pocharlies-agent
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8100:8100"
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://agent:${POSTGRES_PASSWORD:-agent-secret}@pocharlies-postgres:5432/langgraph
-      - REDIS_URL=redis://pocharlies-redis:6379/1
-      - RAG_SERVICE_URL=http://pocharlies-rag:5000
-      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
-      - LLM_API_KEY=${LLM_API_KEY:-none}
-      - LLM_MODEL=${LLM_MODEL:-local}
-    networks:
-      - skirmshop-network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      mcp-server:
-        condition: service_started
-      picqer-mcp:
-        condition: service_started
 
   oauth2-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
@@ -178,6 +133,7 @@ services:
       - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
       - OAUTH2_PROXY_COOKIE_SECURE=true
       - OAUTH2_PROXY_COOKIE_DOMAINS=.e-dani.com
+      - OAUTH2_PROXY_WHITELIST_DOMAINS=.e-dani.com
       - OAUTH2_PROXY_SET_XAUTHREQUEST=true
       - OAUTH2_PROXY_PASS_ACCESS_TOKEN=false
     networks:
@@ -189,7 +145,6 @@ volumes:
     external: true
     name: skirmshopshopifyapp_qdrant_data
   redis_data:
-  postgres_data:
 
 networks:
   skirmshop-network:
