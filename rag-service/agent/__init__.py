@@ -5,6 +5,7 @@ Replaces the hand-rolled agent loop from agent_legacy.py.
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Callable, Awaitable
 from datetime import datetime, timezone
@@ -162,7 +163,7 @@ def create_agent(vllm_base_url: str, api_key: str = "none") -> tuple:
         default_headers={"X-Source-Service": "pocharlies-rag:agent"},
     )
 
-    model_id = "local"
+    model_id = os.environ.get("AGENT_MODEL", "smart")
 
     agent = Agent(
         name="pocharlies-rag",

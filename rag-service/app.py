@@ -84,7 +84,7 @@ webhook_handler: ShopifyWebhookHandler = None
 sync_state_store: SyncStateStore = None
 content_hash_store: ContentHashStore = None
 llm_client: OpenAI = None
-LLM_MODEL = "local"
+LLM_MODEL = os.getenv("LLM_MODEL", "smart")
 rag_agent = None  # Agent SDK instance, created at startup
 redis_client = None  # Async Redis client for session persistence
 session_store: SessionStore = None
@@ -621,7 +621,7 @@ When answering:
             prod_results = product_indexer.search(query=request.query, top_k=5)
             if prod_results:
                 prod_block = "\n".join([
-                    f"- **{r.get('title', 'Unknown')}** | Handle: `{r.get('handle', '')}` | Price: {r.get('price', 'N/A')} | Brand: {r.get('brand', 'N/A')} | {r.get('text', '')[:200]}"
+                    f"- [{r.get('title', 'Unknown')}]({r.get('url', '')}) | Price: {r.get('price', 'N/A')} | Brand: {r.get('brand', 'N/A')} | SKU: {r.get('sku', '')} | {r.get('text', '')[:200]}"
                     for r in prod_results
                 ])
                 context_sections.append(f"## Product Catalog Results\n{prod_block}")

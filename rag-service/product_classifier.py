@@ -7,6 +7,7 @@ resolve entities against the product catalog, and generate price comparisons.
 import asyncio
 import json
 import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -250,7 +251,7 @@ class ProductClassifier:
             response = await loop.run_in_executor(
                 None,
                 lambda: self.llm_client.chat.completions.create(
-                    model="local",
+                    model=os.environ.get("CLASSIFIER_MODEL", "local"),
                     messages=[
                         {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
                         {"role": "user", "content": f"Extract products from these text passages:\n\n{combined}"},

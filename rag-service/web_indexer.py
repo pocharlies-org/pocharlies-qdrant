@@ -5,6 +5,7 @@ Crawls websites and indexes content into Qdrant vector database
 
 import hashlib
 import logging
+import os
 import re
 import asyncio
 from collections import deque
@@ -686,7 +687,7 @@ Rules:
 - Return ONLY the JSON object, no explanation"""
 
         try:
-            model_id = "local"
+            model_id = os.environ.get("CRAWL_MODEL", "local")
             job.log(f"SMART: Calling LLM ({model_id}) with {len(samples)} page samples...")
 
             # Run sync LLM call in thread pool to avoid blocking the event loop.
