@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-service
+  namespace: pocharlies-rag
+  labels:
+    app: agent-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-service
+  template:
+    metadata:
+      labels:
+        app: agent-service
+    spec:
+      containers:
+        - name: agent-service
+          image: ghcr.io/pocharlies/agent-service:latest
+          ports:
+            - containerPort: 8100
+          envFrom:
+            - configMapRef:
+                name: pocharlies-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://pocharlies:$(POSTGRES_PASSWORD)@postgres:5432/pocharlies"
+            - name: REDIS_URL
+              value: "redis://redis:6379/1"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: LLM_API_KEY
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: mcp-servers-config
+              mountPath: /app/mcp_client/mcp_servers.json
+              subPath: mcp_servers.json
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8100
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8100
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: mcp-servers-config
+          configMap:
+            name: mcp-servers-config

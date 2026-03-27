@@ -1,0 +1,131 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rag-service/**'
+      - 'mcp-server/**'
+      - 'agent-service/**'
+      - '.github/workflows/build-images.yaml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rag-service: ${{ steps.changes.outputs.rag-service }}
+      mcp-server: ${{ steps.changes.outputs.mcp-server }}
+      picqer-mcp: ${{ steps.changes.outputs.picqer-mcp }}
+      agent-service: ${{ steps.changes.outputs.agent-service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            rag-service:
+              - 'rag-service/**'
+            mcp-server:
+              - 'mcp-server/server.py'
+              - 'mcp-server/Dockerfile'
+              - 'mcp-server/requirements.txt'
+            picqer-mcp:
+              - 'mcp-server/picqer_*'
+              - 'mcp-server/Dockerfile.picqer'
+            agent-service:
+              - 'agent-service/**'
+
+  build-rag-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.rag-service == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./rag-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/rag-service:latest
+            ${{ env.IMAGE_PREFIX }}/rag-service:${{ github.sha }}
+
+  build-mcp-server:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.mcp-server == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./mcp-server
+          file: ./mcp-server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/mcp-server:latest
+            ${{ env.IMAGE_PREFIX }}/mcp-server:${{ github.sha }}
+
+  build-picqer-mcp:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.picqer-mcp == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./mcp-server
+          file: ./mcp-server/Dockerfile.picqer
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/picqer-mcp:latest
+            ${{ env.IMAGE_PREFIX }}/picqer-mcp:${{ github.sha }}
+
+  build-agent-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.agent-service == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./agent-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/agent-service:latest
+            ${{ env.IMAGE_PREFIX }}/agent-service:${{ github.sha }}

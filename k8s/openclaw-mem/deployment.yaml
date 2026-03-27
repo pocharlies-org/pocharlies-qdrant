@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-mem
+  namespace: pocharlies-rag
+  labels:
+    app: openclaw-mem
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # SQLite doesn't support concurrent writes
+  selector:
+    matchLabels:
+      app: openclaw-mem
+  template:
+    metadata:
+      labels:
+        app: openclaw-mem
+    spec:
+      containers:
+        - name: openclaw-mem
+          image: ghcr.io/pocharlies/openclaw-mem:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OPENCLAW_MEM_DB
+              value: /data/openclaw_mem.db
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: mem-data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: mem-data
+          persistentVolumeClaim:
+            claimName: openclaw-mem-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-mem-data
+  namespace: pocharlies-rag
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi

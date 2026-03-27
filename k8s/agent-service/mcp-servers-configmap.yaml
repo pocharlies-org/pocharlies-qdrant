@@ -1,0 +1,22 @@
+# MCP servers config for agent-service — uses k8s internal DNS
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-servers-config
+  namespace: pocharlies-rag
+data:
+  mcp_servers.json: |
+    {
+      "servers": {
+        "pocharlies-rag": {
+          "type": "sse",
+          "url": "http://mcp-server:8000/sse",
+          "description": "Pocharlies RAG - web crawling, products, competitors, translation"
+        },
+        "picqer-wms": {
+          "type": "sse",
+          "url": "http://picqer-mcp:8001/sse",
+          "description": "Picqer WMS - warehouse management, stock, orders, picklists, shipments"
+        }
+      }
+    }

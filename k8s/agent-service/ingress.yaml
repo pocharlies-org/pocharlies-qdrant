@@ -1,0 +1,40 @@
+# Ingress for external access — requires nginx-ingress + cert-manager
+# Update host values to match your domain
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pocharlies-ingress
+  namespace: pocharlies-rag
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - rag.e-dani.com
+        - agent.e-dani.com
+      secretName: pocharlies-tls
+  rules:
+    - host: rag.e-dani.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rag-service
+                port:
+                  number: 5000
+    - host: agent.e-dani.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: agent-service
+                port:
+                  number: 8100

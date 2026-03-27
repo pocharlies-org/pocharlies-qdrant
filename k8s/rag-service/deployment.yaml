@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-service
+  namespace: pocharlies-rag
+  labels:
+    app: rag-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-service
+  template:
+    metadata:
+      labels:
+        app: rag-service
+    spec:
+      containers:
+        - name: rag-service
+          image: ghcr.io/pocharlies/rag-service:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: pocharlies-config
+          env:
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: QDRANT_API_KEY
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: LLM_API_KEY
+            - name: VLLM_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: pocharlies-config
+                  key: LLM_BASE_URL
+            - name: SHOPIFY_SHOP_DOMAIN
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: SHOPIFY_SHOP_DOMAIN
+            - name: SHOPIFY_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: SHOPIFY_ACCESS_TOKEN
+            - name: SHOPIFY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: SHOPIFY_WEBHOOK_SECRET
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /root/.cache/huggingface
+            - name: knowledge-vault
+              mountPath: /app/knowledge-vault
+            - name: vault-config
+              mountPath: /app/vault_config.yaml
+              subPath: vault_config.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 25
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache
+        - name: knowledge-vault
+          persistentVolumeClaim:
+            claimName: knowledge-vault
+        - name: vault-config
+          configMap:
+            name: vault-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache
+  namespace: pocharlies-rag
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: knowledge-vault
+  namespace: pocharlies-rag
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi

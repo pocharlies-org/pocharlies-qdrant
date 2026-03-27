@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: picqer-mcp
+  namespace: pocharlies-rag
+  labels:
+    app: picqer-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: picqer-mcp
+  template:
+    metadata:
+      labels:
+        app: picqer-mcp
+    spec:
+      containers:
+        - name: picqer-mcp
+          image: ghcr.io/pocharlies/picqer-mcp:latest
+          ports:
+            - containerPort: 8001
+          env:
+            - name: PICQER_SUBDOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: pocharlies-config
+                  key: PICQER_SUBDOMAIN
+            - name: PICQER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pocharlies-secrets
+                  key: PICQER_API_KEY
+            - name: MCP_HOST
+              value: "0.0.0.0"
+            - name: MCP_PORT
+              value: "8001"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /sse
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10

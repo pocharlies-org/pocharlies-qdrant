@@ -1,0 +1,46 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: pocharlies-rag
+
+resources:
+  # Base
+  - namespace.yaml
+  - secrets.yaml
+  - configmap.yaml
+  - networkpolicy.yaml
+
+  # Stateful services
+  - qdrant/statefulset.yaml
+  - qdrant/service.yaml
+  - redis/deployment.yaml
+  - redis/service.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+
+  # Application services
+  - rag-service/deployment.yaml
+  - rag-service/service.yaml
+  - rag-service/hpa.yaml
+  - rag-service/vault-configmap.yaml
+  - mcp-server/deployment.yaml
+  - mcp-server/service.yaml
+  - picqer-mcp/deployment.yaml
+  - picqer-mcp/service.yaml
+  - agent-service/deployment.yaml
+  - agent-service/service.yaml
+  - agent-service/mcp-servers-configmap.yaml
+  - openclaw-mem/deployment.yaml
+  - openclaw-mem/service.yaml
+
+  # Networking
+  - agent-service/ingress.yaml
+
+  # Scheduled jobs
+  - brain-engine/cronjob.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: pocharlies-rag
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false

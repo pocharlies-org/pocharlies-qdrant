@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pocharlies-config
+  namespace: pocharlies-rag
+data:
+  # Internal service URLs (k8s DNS)
+  QDRANT_URL: "http://qdrant:6333"
+  REDIS_URL: "redis://redis:6379/0"
+  POCHARLIES_RAG_URL: "http://rag-service:5000"
+  DATABASE_URL: "postgresql://pocharlies:$(POSTGRES_PASSWORD)@postgres:5432/pocharlies"
+
+  # Embedding & Reranker models
+  EMBEDDING_MODEL: "BAAI/bge-base-en-v1.5"
+  RERANKER_MODEL: "BAAI/bge-reranker-v2-m3"
+  RERANKER_ENABLED: "true"
+
+  # LLM — points to DGX via tunnel/VPN
+  LLM_BASE_URL: "http://dgx-llm:4000/v1"
+  LLM_MODEL: "smart"
+  AGENT_MODEL: "smart"
+  CLASSIFIER_MODEL: "local"
+  CRAWL_MODEL: "local"
+  TRANSLATE_MODEL: "local"
+
+  # RAG service tuning
+  UVICORN_WORKERS: "4"
+  UVICORN_MAX_CONCURRENT: "500"
+  TRANSLATE_MAX_CHUNKS: "1"
+  TRANSLATE_MAX_INPUT_TOKENS: "12000"
+
+  # Vault
+  VAULT_PATH: "/app/knowledge-vault"
+  VAULT_CONFIG: "/app/vault_config.yaml"
+
+  # MCP server
+  MCP_HOST: "0.0.0.0"
+  MCP_PORT: "8000"
+
+  # Picqer
+  PICQER_SUBDOMAIN: "skirmshop"
