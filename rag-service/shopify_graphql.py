@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ShopifyGraphQL:
     """GraphQL client for Shopify Admin API with bulk operations support."""
 
-    API_VERSION = "2025-01"
+    API_VERSION = "2024-10"
 
     def __init__(self, shop_domain: str, access_token: str):
         self.shop_domain = shop_domain
