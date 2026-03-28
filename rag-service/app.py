@@ -591,6 +591,43 @@ async def prometheus_metrics():
     return metrics_response()
 
 
+async def _preprocess_chat_query(query: str) -> dict:
+    """Use LLM to extract search terms and filters from a natural language query.
+
+    Returns dict with: search_query (English), search_query_original,
+    brand_filter, category_filter, compatible_with.
+    """
+    try:
+        response = llm_client.chat.completions.create(
+            model=os.environ.get("CLASSIFIER_MODEL", "local"),
+            messages=[{
+                "role": "system",
+                "content": """Extract product search parameters from the user query.
+Return JSON with:
+- search_query: key product terms in English for semantic search
+- search_query_original: key product terms in the original language for keyword search
+- brand_filter: brand name if mentioned, null otherwise
+- category_filter: product category if identifiable, null otherwise
+- compatible_with: platform/model name if looking for compatible parts, null otherwise
+
+Examples:
+"outer barrel para el SRS 16 pulgadas" → {"search_query": "outer barrel 16 inch SRS", "search_query_original": "outer barrel SRS 16", "brand_filter": null, "category_filter": null, "compatible_with": "SRS"}
+"cargador de gas para glock" → {"search_query": "gas magazine glock", "search_query_original": "cargador gas glock", "brand_filter": null, "category_filter": null, "compatible_with": "Glock"}
+"replica Tokyo Marui M4" → {"search_query": "Tokyo Marui M4 AEG", "search_query_original": "Tokyo Marui M4", "brand_filter": "Tokyo Marui", "category_filter": null, "compatible_with": null}"""
+            }, {
+                "role": "user",
+                "content": query
+            }],
+            max_tokens=200,
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        logger.warning(f"Query preprocessing failed, using raw query: {e}")
+        return {"search_query": query, "search_query_original": query}
+
+
 @app.post("/chat")
 async def chat_with_rag(request: ChatRequest):
     """Chat endpoint with RAG context injection and tool support."""
@@ -615,10 +652,33 @@ When answering:
     if request.use_rag:
         context_sections = []
 
+        # Preprocess query: translate to English + extract filters
+        parsed = await _preprocess_chat_query(request.query)
+        search_q = parsed.get("search_query", request.query)
+        search_q_orig = parsed.get("search_query_original", request.query)
+        brand_filter = parsed.get("brand_filter")
+        category_filter = parsed.get("category_filter")
+        compatible_with = parsed.get("compatible_with")
+
+        logger.info(f"Chat query preprocessed: '{request.query}' → search='{search_q}', orig='{search_q_orig}', brand={brand_filter}, compat={compatible_with}")
+
         # Search across ALL collections for relevant context
         try:
-            # Product catalog
-            prod_results = product_indexer.search(query=request.query, top_k=5)
+            # Product catalog — search with English terms + filters
+            prod_results = product_indexer.search(
+                query=search_q, top_k=5,
+                brand_filter=brand_filter,
+                category_filter=category_filter,
+                compatible_with=compatible_with,
+            )
+            # Also search with original language terms for BM25 keyword matching
+            if search_q_orig and search_q_orig != search_q:
+                orig_results = product_indexer.search(query=search_q_orig, top_k=3)
+                seen = {r["handle"] for r in prod_results}
+                for r in orig_results:
+                    if r["handle"] not in seen:
+                        prod_results.append(r)
+                        seen.add(r["handle"])
             if prod_results:
                 prod_block = "\n".join([
                     f"- [{r.get('title', 'Unknown')}]({r.get('url', '')}) | Price: {r.get('price', 'N/A')} | Brand: {r.get('brand', 'N/A')} | SKU: {r.get('sku', '')} | {r.get('text', '')[:200]}"
@@ -630,7 +690,7 @@ When answering:
 
         try:
             # Web pages (crawled content)
-            web_results = web_indexer.search(query=request.query, top_k=5)
+            web_results = web_indexer.search(query=search_q, top_k=5)
             if web_results:
                 web_block = "\n".join([
                     f"- [{r.get('title', 'Untitled')}]({r.get('url', '')}) ({r.get('domain', 'unknown')})\n  {r.get('text', '')[:300]}"
@@ -642,7 +702,7 @@ When answering:
 
         try:
             # Competitor products
-            comp_results = competitor_indexer.search(query=request.query, top_k=5)
+            comp_results = competitor_indexer.search(query=search_q, top_k=5)
             if comp_results:
                 comp_block = "\n".join([
                     f"- [{r.get('title', 'Untitled')}]({r.get('url', '')}) ({r.get('domain', 'unknown')})\n  {r.get('text', '')[:300]}"
@@ -684,12 +744,6 @@ When answering:
         response = llm_client.chat.completions.create(**call_kwargs)
 
         message = response.choices[0].message
-
-        return {
-            "response": message.content,
-            "tools_used": [],
-                "model": model
-            }
 
         return {
             "response": message.content,
