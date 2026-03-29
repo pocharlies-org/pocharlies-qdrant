@@ -1,0 +1,72 @@
+# Brain-engine retraining CronJob
+# Runs weekly — connects to DGX via SSH to trigger LoRA fine-tuning pipeline.
+# Requires SSH key mounted as secret.
+#
+# To create the SSH secret:
+#   kubectl create secret generic dgx-ssh-key -n pocharlies-rag \
+#     --from-file=id_ed25519=/path/to/dgx-ssh-key \
+#     --from-file=known_hosts=/path/to/known_hosts
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: brain-engine-retrain
+  namespace: pocharlies-rag
+  labels:
+    app: brain-engine
+spec:
+  schedule: "0 2 * * 0"  # Every Sunday at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 21600  # 6 hour timeout
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: brain-engine
+              image: python:3.11-slim
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  apt-get update && apt-get install -y openssh-client && \
+                  mkdir -p ~/.ssh && \
+                  cp /ssh/id_ed25519 ~/.ssh/ && \
+                  cp /ssh/known_hosts ~/.ssh/ && \
+                  chmod 600 ~/.ssh/id_ed25519 && \
+                  ssh -i ~/.ssh/id_ed25519 dibanerz@dgx \
+                    "cd /home/dibanerz/nvidiadgx/pocharlies-lora && \
+                     python orchestrate.py \
+                       --qdrant-url ${QDRANT_URL} \
+                       --qdrant-key ${QDRANT_API_KEY} \
+                       --output-dir /home/dibanerz/nvidiadgx/loras/openclaw-skirmshop/"
+              env:
+                - name: QDRANT_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: pocharlies-config
+                      key: QDRANT_URL
+                - name: QDRANT_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: pocharlies-secrets
+                      key: QDRANT_API_KEY
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
+              volumeMounts:
+                - name: ssh-key
+                  mountPath: /ssh
+                  readOnly: true
+          volumes:
+            - name: ssh-key
+              secret:
+                secretName: dgx-ssh-key
+                defaultMode: 0400

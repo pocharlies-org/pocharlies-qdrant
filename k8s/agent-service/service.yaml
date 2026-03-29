@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-service
+  namespace: pocharlies-rag
+  labels:
+    app: agent-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8100
+      targetPort: 8100
+  selector:
+    app: agent-service

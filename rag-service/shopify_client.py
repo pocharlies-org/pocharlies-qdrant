@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ShopifyClient:
     """Client for Shopify Admin REST API (2024-01 version)."""
 
-    API_VERSION = "2025-01"
+    API_VERSION = "2024-10"
 
     def __init__(self, shop_domain: str, access_token: str):
         self.shop_domain = shop_domain

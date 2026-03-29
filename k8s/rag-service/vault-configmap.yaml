@@ -1,0 +1,156 @@
+# Generated from vault_config.yaml — update when adding competitors/sources
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: pocharlies-rag
+data:
+  vault_config.yaml: |
+    vault_path: ./knowledge-vault
+
+    competitors:
+      - url: https://airsoftquimera.com
+        name: Airsoft Quimera
+        slug: airsoftquimera-com
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.0
+        url_include_patterns: []
+        use_firecrawl: true
+
+      - url: https://www.hobbyexpert.es
+        name: Hobby Expert
+        slug: hobbyexpert-es
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.5
+        url_include_patterns: []
+        use_firecrawl: true
+
+      - url: https://vsgun.com
+        name: VSGUN
+        slug: vsgun-com
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.5
+        url_include_patterns: []
+        use_firecrawl: true
+
+      - url: https://airsoftyecla.es
+        name: Airsoft Yecla
+        slug: airsoftyecla-es
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.5
+        url_include_patterns: []
+        use_firecrawl: true
+
+      - url: https://zulutactical.es
+        name: Zulu Tactical
+        slug: zulutactical-es
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.5
+        url_include_patterns: []
+        use_firecrawl: true
+
+      - url: https://airsoftestartit.com
+        name: Airsoft Estartit
+        slug: airsoftestartit-com
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.5
+        url_include_patterns: []
+        use_firecrawl: true
+
+      - url: https://airsoftnation.store
+        name: Airsoft Nation Store
+        slug: airsoftnation-store
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.5
+        url_include_patterns: []
+        use_firecrawl: true
+
+      - url: https://www.weapon762.com
+        name: Weapon762
+        slug: weapon762-com
+        max_pages: 10000
+        max_depth: 10
+        crawl_delay: 1.5
+        url_include_patterns: []
+        use_firecrawl: true
+
+    sources:
+      - url: https://www.reddit.com/r/airsoft/
+        name: r/airsoft
+        slug: reddit-airsoft
+        type: reddit
+        max_pages: 100
+        max_depth: 2
+        crawl_delay: 2.0
+        focus_topics: ["spain", "europe", "tokyo marui", "vfc", "g&g", "beginner", "aeg", "gbb", "upgrade"]
+
+      - url: https://www.reddit.com/r/airsoft/wiki/
+        name: r/airsoft Wiki & Guides
+        slug: reddit-airsoft-wiki
+        type: guide
+        max_pages: 50
+        max_depth: 3
+        crawl_delay: 2.0
+        focus_topics: ["beginner guide", "buying guide", "upgrade guide", "maintenance"]
+
+      - url: https://www.airsoftzone.es
+        name: Airsoft Zone Spain
+        slug: airsoftzone-es
+        type: forum
+        max_pages: 200
+        max_depth: 3
+        crawl_delay: 1.5
+        focus_topics: ["review", "opinion", "tienda", "marca", "replica"]
+
+      - url: https://www.popularairsoft.com
+        name: Popular Airsoft
+        slug: popularairsoft
+        type: blog
+        max_pages: 150
+        max_depth: 2
+        crawl_delay: 1.5
+        focus_topics: ["review", "new release", "brand", "comparison", "guide"]
+
+      - url: https://www.airsoftgi.com/articles/
+        name: Airsoft GI Articles
+        slug: airsoftgi-articles
+        type: guide
+        max_pages: 100
+        max_depth: 2
+        crawl_delay: 1.5
+        focus_topics: ["guide", "comparison", "review", "how to"]
+
+      - url: https://www.tokyo-marui.co.jp/products/
+        name: Tokyo Marui Official
+        slug: tokyo-marui-official
+        type: brand_site
+        max_pages: 200
+        max_depth: 2
+        crawl_delay: 2.0
+        focus_topics: ["new product", "lineup", "series"]
+
+      - url: https://www.vegaforce.com
+        name: VFC Official
+        slug: vfc-official
+        type: brand_site
+        max_pages: 150
+        max_depth: 2
+        crawl_delay: 2.0
+        focus_topics: ["new product", "gbb", "aeg"]
+
+    messaging:
+      enabled: false
+      platforms: []
+
+    schedule:
+      rebuild_cron: "0 3 * * *"
+
+    health:
+      max_age_days: 2
