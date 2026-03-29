@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pocharlies Brain — Skirmshop Intelligence</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .header h1 { font-size: 24px; font-weight: 600; }
+    .header .badge {
+      background: var(--green);
+      color: #000;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .header .badge.warn { background: var(--yellow); }
+    .header .updated { color: var(--muted); font-size: 13px; margin-left: auto; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .stat-card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .stat-card .value.accent { color: var(--accent); }
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.purple { color: var(--purple); }
+
+    .section { margin-bottom: 32px; }
+    .section h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .diagram-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      overflow-x: auto;
+    }
+    .diagram-container .mermaid { display: flex; justify-content: center; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 14px; }
+    th { background: rgba(88,166,255,0.08); color: var(--accent); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .tag {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .tag.green { background: rgba(63,185,80,0.15); color: var(--green); }
+    .tag.yellow { background: rgba(210,153,34,0.15); color: var(--yellow); }
+    .tag.blue { background: rgba(88,166,255,0.15); color: var(--accent); }
+    .tag.purple { background: rgba(188,140,255,0.15); color: var(--purple); }
+    .tag.red { background: rgba(248,81,73,0.15); color: var(--red); }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .module-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .module-card .name { font-weight: 600; font-size: 14px; }
+    .module-card .count { color: var(--muted); font-size: 13px; }
+    .module-card .desc { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+    #live-health { display: inline-block; }
+    .pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2"><path d="M12 2a8 8 0 0 1 8 8c0 3.3-2 6.2-5 7.5V20a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-2.5C6 16.2 4 13.3 4 10a8 8 0 0 1 8-8z"/><path d="M10 22h4"/><path d="M9 10h.01M15 10h.01"/></svg>
+  <h1>Pocharlies Brain</h1>
+  <span id="live-health" class="badge pulse">checking...</span>
+  <span class="updated" id="last-updated"></span>
+</div>
+
+<div class="container">
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card"><div class="label">Collections</div><div class="value accent" id="s-collections">15</div></div>
+    <div class="stat-card"><div class="label">Total Vectors</div><div class="value green" id="s-vectors">85,685</div></div>
+    <div class="stat-card"><div class="label">Products</div><div class="value" id="s-products">2,701</div></div>
+    <div class="stat-card"><div class="label">Competitor Products</div><div class="value purple" id="s-competitors">19,936</div></div>
+    <div class="stat-card"><div class="label">Suppliers</div><div class="value" id="s-suppliers">8</div></div>
+    <div class="stat-card"><div class="label">API Endpoints</div><div class="value accent">87</div></div>
+    <div class="stat-card"><div class="label">Containers</div><div class="value green" id="s-containers">6</div></div>
+  </div>
+
+  <!-- Architecture Diagram -->
+  <div class="section">
+    <h2>System Architecture</h2>
+    <div class="diagram-container">
+      <pre class="mermaid">
+graph TB
+  subgraph External["External Services"]
+    SHOP[Shopify<br/>Products + Orders]
+    DGX[DGX Server<br/>Qwen 3.5 + LoRA]
+    FC[Firecrawl :3003<br/>Web Crawler]
+    OP[1Password<br/>Credentials]
+    GMAIL[Gmail<br/>Supplier Emails]
+  end
+
+  subgraph Clients["Consumers"]
+    OC[OpenClaw<br/>AI Assistant]
+    CC[Claude Code<br/>Developer]
+    DASH[Dashboard<br/>brain.e-dani.com]
+  end
+
+  subgraph Nginx["Reverse Proxy — nginx"]
+    N1[rag.e-dani.com]
+    N2[brain.e-dani.com<br/>OAuth2]
+    N3[qdrant.e-dani.com]
+  end
+
+  subgraph Docker["Docker Stack — pocharlies-*"]
+    subgraph RAG["RAG Service :5000"]
+      direction TB
+      PROD[Product<br/>Intelligence]
+      COMP[Competitive<br/>Intelligence]
+      SUPP[Supplier<br/>Intelligence]
+      KNOW[Knowledge<br/>Brain]
+      TRANS[Translation<br/>+ Glossary]
+      CHAT[RAG Chat]
+      AGENT[A2A Agent]
+    end
+
+    MCP[MCP Server :8002<br/>SSE Protocol]
+    PMCP[Picqer MCP :8003<br/>WMS Bridge]
+    QD[(Qdrant :6333<br/>15 Collections<br/>85K+ vectors)]
+    REDIS[(Redis<br/>Cache + State)]
+    OAUTH[OAuth2 Proxy :4180]
+  end
+
+  OC -->|MCP SSE| N1
+  CC -->|HTTP API| N1
+  DASH -->|OAuth2| N2
+
+  N1 --> MCP
+  N1 --> RAG
+  N2 --> OAUTH
+  N2 --> RAG
+  N3 --> QD
+
+  MCP --> RAG
+  PMCP -.->|Picqer API| PMCP
+
+  RAG --> QD
+  RAG --> REDIS
+  RAG -->|LLM calls| DGX
+  RAG -->|Crawl| FC
+  RAG -->|Webhooks| SHOP
+  RAG -->|op CLI| OP
+  RAG -->|Monitor| GMAIL
+
+  PROD --> QD
+  COMP --> QD
+  SUPP --> QD
+  KNOW --> QD
+
+  SHOP -->|Webhook push| RAG
+
+  classDef external fill:#1a1e2e,stroke:#58a6ff,color:#e6edf3
+  classDef client fill:#1a2e1a,stroke:#3fb950,color:#e6edf3
+  classDef service fill:#2d1a1a,stroke:#f0883e,color:#e6edf3
+  classDef storage fill:#1a1a2e,stroke:#bc8cff,color:#e6edf3
+  classDef proxy fill:#2d2a1a,stroke:#d29922,color:#e6edf3
+
+  class SHOP,DGX,FC,OP,GMAIL external
+  class OC,CC,DASH client
+  class RAG,MCP,PMCP,PROD,COMP,SUPP,KNOW,TRANS,CHAT,AGENT service
+  class QD,REDIS storage
+  class N1,N2,N3,OAUTH proxy
+      </pre>
+    </div>
+  </div>
+
+  <!-- Collections + Suppliers side by side -->
+  <div class="two-col">
+    <div class="section">
+      <h2>Qdrant Collections</h2>
+      <table>
+        <thead><tr><th>Collection</th><th>Points</th><th>Status</th></tr></thead>
+        <tbody id="collections-table">
+          <tr><td>skirmshop_documents</td><td>29,754</td><td><span class="tag green">active</span></td></tr>
+          <tr><td>skirmshop_concepts</td><td>29,353</td><td><span class="tag green">active</span></td></tr>
+          <tr><td>competitor_products_v2</td><td>19,936</td><td><span class="tag green">active</span></td></tr>
+          <tr><td>skirmshop_products_v2</td><td>2,701</td><td><span class="tag green">active</span></td></tr>
+          <tr><td>product_catalog</td><td>2,513</td><td><span class="tag yellow">legacy</span></td></tr>
+          <tr><td>competitor_products</td><td>1,111</td><td><span class="tag yellow">legacy</span></td></tr>
+          <tr><td>knowledge_brain</td><td>307</td><td><span class="tag green">active</span></td></tr>
+          <tr><td>supplier_registry</td><td>8</td><td><span class="tag blue">new</span></td></tr>
+          <tr><td>supplier_products</td><td>2</td><td><span class="tag blue">new</span></td></tr>
+          <tr><td>web_pages</td><td>0</td><td><span class="tag green">ready</span></td></tr>
+          <tr><td>emails_v2</td><td>0</td><td><span class="tag green">ready</span></td></tr>
+          <tr><td>product_pages</td><td>0</td><td><span class="tag green">ready</span></td></tr>
+          <tr><td>supplier_pages</td><td>0</td><td><span class="tag green">ready</span></td></tr>
+          <tr><td>skirmshop_vault</td><td>0</td><td><span class="tag green">ready</span></td></tr>
+          <tr><td>product_collections</td><td>0</td><td><span class="tag green">ready</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Suppliers</h2>
+      <table>
+        <thead><tr><th>Supplier</th><th>Type</th><th>Status</th><th>Products</th></tr></thead>
+        <tbody id="suppliers-table">
+          <tr><td>Silverback Airsoft</td><td>Manufacturer</td><td><span class="tag green">active</span></td><td>0</td></tr>
+          <tr><td>3P-Store</td><td>Wholesaler</td><td><span class="tag green">active</span></td><td>0</td></tr>
+          <tr><td>AGM</td><td>Distributor</td><td><span class="tag green">active</span></td><td>0</td></tr>
+          <tr><td>Taiwangun</td><td>Wholesaler</td><td><span class="tag yellow">potential</span></td><td>0</td></tr>
+          <tr><td>Gunfire</td><td>Wholesaler</td><td><span class="tag yellow">potential</span></td><td>0</td></tr>
+          <tr><td>AirsoftZone</td><td>Competitor/Supplier</td><td><span class="tag yellow">potential</span></td><td>0</td></tr>
+          <tr><td>Anareus</td><td>Competitor/Supplier</td><td><span class="tag yellow">potential</span></td><td>2</td></tr>
+          <tr><td>VSGUN</td><td>Competitor/Supplier</td><td><span class="tag yellow">potential</span></td><td>0</td></tr>
+        </tbody>
+      </table>
+
+      <h2 style="margin-top:24px">Competitors Tracked</h2>
+      <table>
+        <thead><tr><th>Competitor</th><th>Products Indexed</th></tr></thead>
+        <tbody>
+          <tr><td>Airsoft Quimera</td><td>—</td></tr>
+          <tr><td>Hobby Expert</td><td>—</td></tr>
+          <tr><td>VSGUN</td><td>—</td></tr>
+          <tr><td>Zulu Tactical</td><td>—</td></tr>
+          <tr><td>Airsoft Estartit</td><td>—</td></tr>
+          <tr><td>Airsoft Nation Store</td><td>—</td></tr>
+          <tr><td>Airsoft Yecla</td><td>—</td></tr>
+          <tr><td>Weapon762</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- API Modules -->
+  <div class="section">
+    <h2>API Modules (87 endpoints)</h2>
+    <div class="module-grid">
+      <div class="module-card"><div class="name">Products</div><div class="count">8 endpoints</div><div class="desc">Search, sync, stats, inventory, webhooks</div></div>
+      <div class="module-card"><div class="name">Suppliers</div><div class="count">21 endpoints</div><div class="desc">Registry, crawl, margins, gaps, purchase orders</div></div>
+      <div class="module-card"><div class="name">Knowledge Brain</div><div class="count">11 endpoints</div><div class="desc">Learn, research, synthesize, deep-analyze</div></div>
+      <div class="module-card"><div class="name">Web Crawler</div><div class="count">10 endpoints</div><div class="desc">Index URLs, search, manage crawl jobs</div></div>
+      <div class="module-card"><div class="name">Agent (A2A)</div><div class="count">10 endpoints</div><div class="desc">Task management, streaming, A2A protocol</div></div>
+      <div class="module-card"><div class="name">Glossary</div><div class="count">6 endpoints</div><div class="desc">Airsoft terminology management</div></div>
+      <div class="module-card"><div class="name">Chat</div><div class="count">1 endpoint</div><div class="desc">RAG-powered chat with DGX LLM</div></div>
+      <div class="module-card"><div class="name">Competitors</div><div class="count">4 endpoints</div><div class="desc">Crawl, index, compare prices</div></div>
+      <div class="module-card"><div class="name">Collections</div><div class="count">4 endpoints</div><div class="desc">Search and browse product collections</div></div>
+      <div class="module-card"><div class="name">Classification</div><div class="count">4 endpoints</div><div class="desc">AI product extraction and classification</div></div>
+      <div class="module-card"><div class="name">Translation</div><div class="count">3 endpoints</div><div class="desc">Batch translate with airsoft glossary</div></div>
+      <div class="module-card"><div class="name">Orders</div><div class="count">3 endpoints</div><div class="desc">Recent orders, details, fulfillments</div></div>
+      <div class="module-card"><div class="name">Admin</div><div class="count">3 endpoints</div><div class="desc">Compatibility analysis</div></div>
+      <div class="module-card"><div class="name">Dashboard</div><div class="count">2 endpoints</div><div class="desc">Timeline and collections overview</div></div>
+      <div class="module-card"><div class="name">System</div><div class="count">3 endpoints</div><div class="desc">Health, metrics, API docs</div></div>
+    </div>
+  </div>
+
+  <!-- Data Flow Diagram -->
+  <div class="section">
+    <h2>Data Flow</h2>
+    <div class="diagram-container">
+      <pre class="mermaid">
+flowchart LR
+  subgraph Sources["Data Sources"]
+    S1[Shopify Store]
+    S2[Competitor Sites]
+    S3[Supplier B2B Portals]
+    S4[Knowledge Vault]
+    S5[Supplier Emails]
+    S6[Price Lists]
+  end
+
+  subgraph Processing["Processing Pipeline"]
+    P1[Product Indexer]
+    P2[Web Crawler<br/>+ Firecrawl]
+    P3[Auth Crawler<br/>+ Cookie Mgmt]
+    P4[Vault Builder]
+    P5[Email Monitor]
+    P6[Pricelist Parser]
+    P7[Fast Product<br/>Extractor]
+    P8[BGE-M3<br/>Embeddings]
+  end
+
+  subgraph Storage["Vector Storage"]
+    Q1[(Products<br/>2,701)]
+    Q2[(Competitors<br/>19,936)]
+    Q3[(Suppliers<br/>10)]
+    Q4[(Knowledge<br/>29,754)]
+    Q5[(Concepts<br/>29,353)]
+  end
+
+  subgraph Intelligence["Intelligence Layer"]
+    I1[Margin Analyzer]
+    I2[Purchase Recommender]
+    I3[Gap Analyzer]
+    I4[Price Comparator]
+    I5[Knowledge Synthesizer]
+    I6[RAG Chat]
+  end
+
+  S1 -->|Webhooks| P1
+  S2 -->|Crawl| P2
+  S3 -->|Login + Crawl| P3
+  S4 -->|Index| P4
+  S5 -->|IMAP| P5
+  S6 -->|Upload| P6
+
+  P2 --> P7
+  P3 --> P7
+  P7 --> P8
+  P1 --> P8
+  P4 --> P8
+  P5 --> P8
+  P6 --> P8
+
+  P8 --> Q1
+  P8 --> Q2
+  P8 --> Q3
+  P8 --> Q4
+  P8 --> Q5
+
+  Q1 --> I1
+  Q2 --> I1
+  Q3 --> I1
+  Q1 --> I2
+  Q3 --> I2
+  Q2 --> I3
+  Q1 --> I3
+  Q1 --> I4
+  Q2 --> I4
+  Q3 --> I4
+  Q4 --> I5
+  Q5 --> I5
+  Q1 & Q2 & Q3 & Q4 --> I6
+
+  classDef source fill:#1a2e1a,stroke:#3fb950,color:#e6edf3
+  classDef process fill:#2d1a1a,stroke:#f0883e,color:#e6edf3
+  classDef store fill:#1a1a2e,stroke:#bc8cff,color:#e6edf3
+  classDef intel fill:#1a1e2e,stroke:#58a6ff,color:#e6edf3
+
+  class S1,S2,S3,S4,S5,S6 source
+  class P1,P2,P3,P4,P5,P6,P7,P8 process
+  class Q1,Q2,Q3,Q4,Q5 store
+  class I1,I2,I3,I4,I5,I6 intel
+      </pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1a1e2e',
+      primaryTextColor: '#e6edf3',
+      lineColor: '#58a6ff',
+      fontSize: '14px'
+    },
+    flowchart: { curve: 'basis', padding: 20 }
+  });
+
+  // Live health check
+  async function checkHealth() {
+    try {
+      const res = await fetch('/api/health');
+      if (res.ok) {
+        const data = await res.json();
+        const badge = document.getElementById('live-health');
+        badge.textContent = data.status === 'healthy' ? 'healthy' : 'degraded';
+        badge.className = data.status === 'healthy' ? 'badge' : 'badge warn';
+
+        // Update stats from live data
+        if (data.qdrant) {
+          document.getElementById('s-collections').textContent = data.qdrant.collections_count;
+          let total = 0;
+          for (const [name, col] of Object.entries(data.qdrant.collections || {})) {
+            total += col.points_count || 0;
+          }
+          document.getElementById('s-vectors').textContent = total.toLocaleString();
+        }
+      }
+    } catch(e) {
+      document.getElementById('live-health').textContent = 'offline';
+      document.getElementById('live-health').className = 'badge warn';
+    }
+    document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  }
+
+  checkHealth();
+  setInterval(checkHealth, 30000);
+</script>
+
+</body>
+</html>

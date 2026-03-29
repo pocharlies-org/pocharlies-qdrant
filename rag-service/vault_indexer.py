@@ -24,6 +24,7 @@ from qdrant_client.http.models import (
 )
 
 from qdrant_utils import make_qdrant_client
+import bgem3_encoder
 
 logger = logging.getLogger(__name__)
 
@@ -123,28 +124,19 @@ def _chunk_markdown(content: str, max_chunk_size: int = 1000) -> List[Dict]:
 class VaultIndexer:
     """Indexes Obsidian vault markdown files into a Qdrant collection."""
 
-    BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-
     def __init__(
         self,
         vault_path: str,
         qdrant_url: str,
         qdrant_api_key: str = None,
         model=None,
-        embedding_model: str = "BAAI/bge-base-en-v1.5",
+        embedding_model: str = "BAAI/bge-m3",
         redis_client=None,
     ):
         self.vault_path = Path(vault_path)
         self.client = make_qdrant_client(qdrant_url, qdrant_api_key)
         self.redis = redis_client
-
-        if model is not None:
-            self.model = model
-        else:
-            from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer(embedding_model)
-
-        self.dim = self.model.get_sentence_embedding_dimension()
+        self.dim = bgem3_encoder.DENSE_DIM
 
     def _ensure_collection(self):
         """Create knowledge_brain collection if it doesn't exist."""
@@ -308,14 +300,10 @@ class VaultIndexer:
                     for chunk in chunks
                 ]
 
-                # Embed
-                dense_embeddings = await loop.run_in_executor(
+                # Embed via BGE-M3
+                dense_embeddings, sparse_embeddings = await loop.run_in_executor(
                     None,
-                    lambda t=texts: self.model.encode(t, normalize_embeddings=True, batch_size=len(t))
-                )
-                sparse_embeddings = await loop.run_in_executor(
-                    None,
-                    lambda t=texts: encode_sparse(t)
+                    lambda t=texts: bgem3_encoder.encode_both(t)
                 )
 
                 # Build points
@@ -449,18 +437,13 @@ class VaultIndexer:
         note_type: str = "recommendation",
     ) -> list[dict]:
         """Hybrid search on knowledge_brain filtered by note_type."""
-        from sparse_encoder import encode_sparse_query
-
         try:
             existing = [c.name for c in self.client.get_collections().collections]
             if COLLECTION_NAME not in existing:
                 return []
 
-            prefixed_query = f"{self.BGE_QUERY_PREFIX}{query}"
-            dense_embedding = self.model.encode(
-                prefixed_query, normalize_embeddings=True
-            ).tolist()
-            sparse_embedding = encode_sparse_query(query)
+            dense_embedding = bgem3_encoder.encode_dense_query(query)
+            sparse_embedding = bgem3_encoder.encode_sparse_query(query)
 
             conditions = [
                 FieldCondition(key="note_type", match=MatchValue(value=note_type))

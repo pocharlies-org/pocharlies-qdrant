@@ -34,7 +34,7 @@ from qdrant_client.http.models import (
     SparseVectorParams, SparseIndexParams,
     Prefetch, FusionQuery, Fusion,
 )
-from sentence_transformers import SentenceTransformer
+import bgem3_encoder
 
 from qdrant_utils import make_qdrant_client
 
@@ -173,8 +173,8 @@ class WebIndexer:
         self,
         qdrant_url: str = "http://localhost:6333",
         qdrant_api_key: Optional[str] = None,
-        model: Optional[SentenceTransformer] = None,
-        embedding_model: str = "BAAI/bge-base-en-v1.5",
+        model=None,
+        embedding_model: str = "BAAI/bge-m3",
         collection_name: Optional[str] = None,
     ):
         if collection_name:
@@ -183,13 +183,7 @@ class WebIndexer:
         self._qdrant_url = qdrant_url.rstrip("/")
         self._qdrant_api_key = qdrant_api_key
 
-        # Share model instance if provided (avoids double-loading ~440MB)
-        if model is not None:
-            self.model = model
-        else:
-            self.model = SentenceTransformer(embedding_model)
-
-        self.dim = self.model.get_sentence_embedding_dimension()
+        self.dim = bgem3_encoder.DENSE_DIM
         self._robots_cache: Dict[str, RobotFileParser] = {}
         self._site_configs: Dict[str, ExtractionConfig] = {}  # domain → cached config
         self._ensure_collection()
@@ -1385,27 +1379,16 @@ Rules:
     async def _embed_and_build_points(self, chunk_items: list) -> list:
         """Batch-encode chunks (dense + sparse) and return PointStruct list.
 
-        Uses run_in_executor to keep event loop responsive during CPU-bound
-        embedding (allows producer to continue fetching + SSE to stream).
+        Uses run_in_executor to keep event loop responsive during
+        embedding HTTP calls to TEI service.
         """
-        from sparse_encoder import encode_sparse
-
         texts = [item["text"] for item in chunk_items]
 
         loop = asyncio.get_event_loop()
-        # Dense embeddings (semantic)
-        dense_embeddings = await loop.run_in_executor(
+        # Dense + sparse embeddings via BGE-M3 TEI service
+        dense_embeddings, sparse_embeddings = await loop.run_in_executor(
             None,
-            lambda: self.model.encode(
-                texts,
-                normalize_embeddings=True,
-                batch_size=len(texts),
-            )
-        )
-        # Sparse embeddings (BM25 keyword)
-        sparse_embeddings = await loop.run_in_executor(
-            None,
-            lambda: encode_sparse(texts)
+            lambda: bgem3_encoder.encode_both(texts)
         )
 
         points = []
@@ -1539,22 +1522,16 @@ Rules:
         domain_filter: Optional[str] = None,
     ) -> List[Dict]:
         """Hybrid search (dense + sparse BM25) on web_pages collection."""
-        from sparse_encoder import encode_sparse_query
-
         try:
             collections = [c.name for c in self.client.get_collections().collections]
             if self.COLLECTION_NAME not in collections:
                 return []
 
-            # Dense embedding with BGE query prefix
-            prefixed_query = f"{self.BGE_QUERY_PREFIX}{query}"
-            dense_embedding = self.model.encode(
-                prefixed_query,
-                normalize_embeddings=True,
-            ).tolist()
+            # Dense embedding via BGE-M3 TEI
+            dense_embedding = bgem3_encoder.encode_dense_query(query)
 
-            # Sparse embedding (BM25)
-            sparse_embedding = encode_sparse_query(query)
+            # Sparse embedding via BGE-M3 TEI (with airsoft glossary enrichment)
+            sparse_embedding = bgem3_encoder.encode_sparse_query(query)
 
             search_filter = None
             if domain_filter:

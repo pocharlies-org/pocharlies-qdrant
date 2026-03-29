@@ -17,9 +17,8 @@ from qdrant_client.http.models import (
     SparseVectorParams, SparseIndexParams,
     Prefetch, FusionQuery, Fusion,
 )
-from sentence_transformers import SentenceTransformer
-
 from qdrant_utils import make_qdrant_client
+import bgem3_encoder
 
 logger = logging.getLogger(__name__)
 
@@ -68,25 +67,18 @@ class ProductSyncJob:
 
 class ProductIndexer:
     COLLECTION_NAME = "product_catalog"
-    BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
     def __init__(
         self,
         qdrant_url: str = "http://localhost:6333",
         qdrant_api_key: Optional[str] = None,
-        model: Optional[SentenceTransformer] = None,
-        embedding_model: str = "BAAI/bge-base-en-v1.5",
+        model=None,
+        embedding_model: str = "BAAI/bge-m3",
     ):
         self.client = make_qdrant_client(qdrant_url, qdrant_api_key)
         self._qdrant_url = qdrant_url.rstrip("/")
         self._qdrant_api_key = qdrant_api_key
-
-        if model is not None:
-            self.model = model
-        else:
-            self.model = SentenceTransformer(embedding_model)
-
-        self.dim = self.model.get_sentence_embedding_dimension()
+        self.dim = bgem3_encoder.DENSE_DIM
         self._ensure_collection()
 
     def _ensure_collection(self):
@@ -284,7 +276,6 @@ class ProductIndexer:
         content_hash_store=None,
     ) -> tuple:
         """Process a batch of products: extract text, embed, build points. Returns (points, skipped_count)."""
-        from sparse_encoder import encode_sparse
 
         texts = []
         metadatas = []
@@ -315,19 +306,11 @@ class ProductIndexer:
         if not texts:
             return [], skipped
 
-        # Embed (dense + sparse)
+        # Embed (dense + sparse) via BGE-M3
         loop = asyncio.get_event_loop()
-        dense_embeddings = await loop.run_in_executor(
+        dense_embeddings, sparse_embeddings = await loop.run_in_executor(
             None,
-            lambda: self.model.encode(
-                texts,
-                normalize_embeddings=True,
-                batch_size=len(texts),
-            )
-        )
-        sparse_embeddings = await loop.run_in_executor(
-            None,
-            lambda: encode_sparse(texts)
+            lambda: bgem3_encoder.encode_both(texts)
         )
 
         points = []
@@ -372,18 +355,13 @@ class ProductIndexer:
         exclude_base_platforms: bool = False,
     ) -> List[Dict]:
         """Hybrid search on product_catalog with structured filters."""
-        from sparse_encoder import encode_sparse_query
-
         try:
             collections = [c.name for c in self.client.get_collections().collections]
             if self.COLLECTION_NAME not in collections:
                 return []
 
-            prefixed_query = f"{self.BGE_QUERY_PREFIX}{query}"
-            dense_embedding = self.model.encode(
-                prefixed_query, normalize_embeddings=True
-            ).tolist()
-            sparse_embedding = encode_sparse_query(query)
+            dense_embedding = bgem3_encoder.encode_dense_query(query)
+            sparse_embedding = bgem3_encoder.encode_sparse_query(query)
 
             # Build filters
             conditions = []

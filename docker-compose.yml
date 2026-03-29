@@ -44,6 +44,8 @@ services:
       - VLLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
       - LITELLM_API_KEY=${LLM_API_KEY:-none}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-base-en-v1.5}
+      - EMBEDDING_URL=${EMBEDDING_URL:-}
+      - TEI_EMBEDDING_URL=${TEI_EMBEDDING_URL:-}
       - REDIS_URL=redis://pocharlies-redis:6379/0
       - SHOPIFY_SHOP_DOMAIN=${SHOPIFY_SHOP_DOMAIN:-}
       - SHOPIFY_ACCESS_TOKEN=${SHOPIFY_ACCESS_TOKEN:-}
@@ -92,6 +94,8 @@ services:
       - QDRANT_API_KEY=${QDRANT_API_KEY}
       - POCHARLIES_RAG_URL=http://pocharlies-rag:5000
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-base-en-v1.5}
+      - EMBEDDING_URL=${EMBEDDING_URL:-}
+      - TEI_EMBEDDING_URL=${TEI_EMBEDDING_URL:-}
       - OLLAMA_URL=http://172.18.0.1:11434
       - OLLAMA_EMBED_MODEL=nomic-embed-text
     extra_hosts:

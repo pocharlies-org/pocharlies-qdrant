@@ -1,0 +1,232 @@
+{
+  "avg_score": 0.6958,
+  "results": [
+    {
+      "query": "rifles eléctricos VFC disponibles menos de 400 euros",
+      "collection": "skirmshop_products_v2",
+      "top_3": []
+    },
+    {
+      "query": "pistolas GBB glock en stock",
+      "collection": "skirmshop_products_v2",
+      "top_3": [
+        {
+          "score": 0.7399,
+          "title": "AAP01 Folding Stock",
+          "price": 45.95,
+          "in_stock": true,
+          "brand": "Action Army"
+        },
+        {
+          "score": 0.7217,
+          "title": "TGD Short Grip - FDE",
+          "price": 8.95,
+          "in_stock": true,
+          "brand": "Metal"
+        },
+        {
+          "score": 0.7192,
+          "title": "TGD Short Grip - Black",
+          "price": 9.95,
+          "in_stock": true,
+          "brand": "Metal"
+        }
+      ]
+    },
+    {
+      "query": "precio competidor del VFC M4 CQBR",
+      "collection": "competitor_products_v2",
+      "top_3": [
+        {
+          "score": 0.8043,
+          "title": "ᐈ Bocachas AirSoft al mejor precio - Quimera Airsoft",
+          "price": 24.5,
+          "in_stock": true,
+          "brand": "VFC"
+        },
+        {
+          "score": 0.7903,
+          "title": "ᐈ Bocachas AirSoft al mejor precio - Quimera Airsoft",
+          "price": 12.9,
+          "in_stock": true,
+          "brand": "VFC"
+        },
+        {
+          "score": 0.7806,
+          "title": "ASG - Quimera Airsoft",
+          "price": 395.01,
+          "in_stock": true,
+          "brand": "VFC"
+        }
+      ]
+    },
+    {
+      "query": "clientes preguntando por problemas de envío",
+      "collection": "skirmshop_products_v2",
+      "top_3": [
+        {
+          "score": 0.5538,
+          "title": "HTI Recambios de Juntas Tóricas",
+          "price": 4.05,
+          "in_stock": false,
+          "brand": "Silverback"
+        },
+        {
+          "score": 0.5506,
+          "title": "Steel Multi-Tool",
+          "price": 19.99,
+          "in_stock": true,
+          "brand": "Metal"
+        },
+        {
+          "score": 0.545,
+          "title": "Cabeza de Cerrojo HTI",
+          "price": 66.65,
+          "in_stock": true,
+          "brand": "Silverback"
+        }
+      ]
+    },
+    {
+      "query": "productos de francotirador sniper disponibles",
+      "collection": "skirmshop_products_v2",
+      "top_3": [
+        {
+          "score": 0.6992,
+          "title": "DI Optical SP1 Red Dot Reflex Sight",
+          "price": 84.95,
+          "in_stock": true,
+          "brand": "Aim-O"
+        },
+        {
+          "score": 0.6962,
+          "title": "KillFlash Óptica SRS",
+          "price": 14.5,
+          "in_stock": true,
+          "brand": "Aim-O"
+        },
+        {
+          "score": 0.6852,
+          "title": "TAC-41LS Full Upgraded - FDE",
+          "price": 544.95,
+          "in_stock": true,
+          "brand": "Skirmshop Spain"
+        }
+      ]
+    },
+    {
+      "query": "cuánto cobra VSGun por el Tokyo Marui MWS",
+      "collection": "competitor_products_v2",
+      "top_3": [
+        {
+          "score": 0.7266,
+          "title": "ALICATE MILTEC MULTIUSOS COBRA C/FUNDA NEGRO// VSGUN",
+          "price": null,
+          "in_stock": null,
+          "brand": ""
+        },
+        {
+          "score": 0.7044,
+          "title": "GAFAS BOLLÉ COBRA KIT NEGRA TÁCTICA 🛡️ · VSGun",
+          "price": null,
+          "in_stock": null,
+          "brand": ""
+        },
+        {
+          "score": 0.702,
+          "title": "Réplica Secutor Centurion II coyote MWS GBB · VSGun",
+          "price": null,
+          "in_stock": null,
+          "brand": ""
+        }
+      ]
+    },
+    {
+      "query": "réplicas agotadas de HK416",
+      "collection": "skirmshop_products_v2",
+      "top_3": [
+        {
+          "score": 0.7185,
+          "title": "HTI Recambios de Juntas Tóricas",
+          "price": 4.05,
+          "in_stock": false,
+          "brand": "Silverback"
+        },
+        {
+          "score": 0.7009,
+          "title": "Replacement Shipping",
+          "price": 0.0,
+          "in_stock": false,
+          "brand": "Skirmshop Spain"
+        },
+        {
+          "score": 0.7009,
+          "title": "MDR Motor",
+          "price": 0.0,
+          "in_stock": false,
+          "brand": "Skirmshop Spain"
+        }
+      ]
+    },
+    {
+      "query": "emails de proveedores con facturas pendientes",
+      "collection": "emails_v2",
+      "top_3": [],
+      "note": "empty"
+    },
+    {
+      "query": "productos con descuento compare_at_price mayor que price",
+      "collection": "skirmshop_products_v2",
+      "top_3": [
+        {
+          "score": 0.6142,
+          "title": "DI Optical SP1 Red Dot Reflex Sight",
+          "price": 84.95,
+          "in_stock": true,
+          "brand": "Aim-O"
+        },
+        {
+          "score": 0.6116,
+          "title": "Shipment Cost UPS",
+          "price": 386.0,
+          "in_stock": false,
+          "brand": "Skirmshop Spain"
+        },
+        {
+          "score": 0.6102,
+          "title": "Cabeza de Cerrojo HTI",
+          "price": 66.65,
+          "in_stock": true,
+          "brand": "Silverback"
+        }
+      ]
+    },
+    {
+      "query": "airsoft pistol under 100 euros in stock",
+      "collection": "skirmshop_products_v2",
+      "top_3": [
+        {
+          "score": 0.783,
+          "title": "AAP-01C Assassin GBB Full Auto / Semi Auto (Black)",
+          "price": 89.95,
+          "in_stock": true,
+          "brand": "Action Army"
+        },
+        {
+          "score": 0.7796,
+          "title": "AAP01 Folding Stock",
+          "price": 45.95,
+          "in_stock": true,
+          "brand": "Action Army"
+        },
+        {
+          "score": 0.7608,
+          "title": "AAP01 GBB Full Auto / Semi Auto (Black)",
+          "price": 94.95,
+          "in_stock": true,
+          "brand": "Action Army"
+        }
+      ]
+    }
+  ]
+}

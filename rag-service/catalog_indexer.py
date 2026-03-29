@@ -18,6 +18,7 @@ from qdrant_client.http.models import (
 )
 
 from qdrant_utils import make_qdrant_client
+import bgem3_encoder
 
 logger = logging.getLogger(__name__)
 
@@ -28,20 +29,11 @@ PAGES_NAME = "product_pages"
 class CatalogIndexer:
     """Indexes collections and pages into Qdrant. Works alongside ProductIndexer."""
 
-    BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-
-    def __init__(self, qdrant_url, qdrant_api_key=None, model=None, embedding_model="BAAI/bge-base-en-v1.5"):
+    def __init__(self, qdrant_url, qdrant_api_key=None, model=None, embedding_model="BAAI/bge-m3"):
         self.client = make_qdrant_client(qdrant_url, qdrant_api_key)
         self._qdrant_url = qdrant_url.rstrip("/")
         self._qdrant_api_key = qdrant_api_key
-
-        if model is not None:
-            self.model = model
-        else:
-            from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer(embedding_model)
-
-        self.dim = self.model.get_sentence_embedding_dimension()
+        self.dim = bgem3_encoder.DENSE_DIM
         self._ensure_collections()
 
     def _ensure_collections(self):
@@ -81,7 +73,7 @@ class CatalogIndexer:
     async def index_collections(self, collections_data: List[dict], shopify_client,
                                  content_hash_store=None) -> dict:
         """Index a list of flattened collections into Qdrant."""
-        from sparse_encoder import encode_sparse
+
 
         indexed = 0
         skipped = 0
@@ -110,13 +102,11 @@ class CatalogIndexer:
         if not texts:
             return {"indexed": indexed, "skipped": skipped}
 
-        # Embed
+        # Embed via BGE-M3
         loop = asyncio.get_event_loop()
-        dense_embeddings = await loop.run_in_executor(
-            None,
-            lambda: self.model.encode(texts, normalize_embeddings=True, batch_size=len(texts))
+        dense_embeddings, sparse_embeddings = await loop.run_in_executor(
+            None, lambda: bgem3_encoder.encode_both(texts)
         )
-        sparse_embeddings = await loop.run_in_executor(None, lambda: encode_sparse(texts))
 
         points = []
         for i, (text, metadata) in enumerate(zip(texts, metadatas)):
@@ -237,7 +227,7 @@ class CatalogIndexer:
     async def index_pages(self, pages_data: List[dict], shopify_client,
                            content_hash_store=None) -> dict:
         """Index pages as chunked sections into Qdrant for fine-grained retrieval."""
-        from sparse_encoder import encode_sparse
+
 
         indexed = 0
         skipped = 0
@@ -276,11 +266,9 @@ class CatalogIndexer:
             return {"indexed": indexed, "skipped": skipped}
 
         loop = asyncio.get_event_loop()
-        dense_embeddings = await loop.run_in_executor(
-            None,
-            lambda: self.model.encode(texts, normalize_embeddings=True, batch_size=min(len(texts), 64))
+        dense_embeddings, sparse_embeddings = await loop.run_in_executor(
+            None, lambda: bgem3_encoder.encode_both(texts)
         )
-        sparse_embeddings = await loop.run_in_executor(None, lambda: encode_sparse(texts))
 
         points = []
         for i, (text, metadata) in enumerate(zip(texts, metadatas)):
@@ -314,16 +302,13 @@ class CatalogIndexer:
 
     def search_collections(self, query: str, top_k: int = 5) -> List[Dict]:
         """Semantic search on product_collections."""
-        from sparse_encoder import encode_sparse_query
-
         try:
             collections = [c.name for c in self.client.get_collections().collections]
             if COLLECTIONS_NAME not in collections:
                 return []
 
-            prefixed = f"{self.BGE_QUERY_PREFIX}{query}"
-            dense = self.model.encode(prefixed, normalize_embeddings=True).tolist()
-            sparse = encode_sparse_query(query)
+            dense = bgem3_encoder.encode_dense_query(query)
+            sparse = bgem3_encoder.encode_sparse_query(query)
 
             results = self.client.query_points(
                 collection_name=COLLECTIONS_NAME,
@@ -355,16 +340,13 @@ class CatalogIndexer:
 
     def search_pages(self, query: str, top_k: int = 5) -> List[Dict]:
         """Semantic search on product_pages."""
-        from sparse_encoder import encode_sparse_query
-
         try:
             collections = [c.name for c in self.client.get_collections().collections]
             if PAGES_NAME not in collections:
                 return []
 
-            prefixed = f"{self.BGE_QUERY_PREFIX}{query}"
-            dense = self.model.encode(prefixed, normalize_embeddings=True).tolist()
-            sparse = encode_sparse_query(query)
+            dense = bgem3_encoder.encode_dense_query(query)
+            sparse = bgem3_encoder.encode_sparse_query(query)
 
             results = self.client.query_points(
                 collection_name=PAGES_NAME,
